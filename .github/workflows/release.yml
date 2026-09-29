@@ -106,4 +106,5 @@ jobs:
       - name: Publish after both platforms succeed
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false
