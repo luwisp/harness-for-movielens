@@ -13,6 +13,20 @@ npm run tauri dev
 
 在设置页先保存 DeepSeek API Key、Hadoop 连接配置，再分别上传 `users.dat`、`movies.dat`、`ratings.dat`。上传采用分块传输，写入 HDFS 成功后才激活新版本；设置页可刷新检查三个文件的实际 HDFS 存在状态。替换某文件后，后续任务使用新版本，已有任务的输入路径和哈希保留。首次使用建议运行 `hadoop fs -ls /` 检查集群连通性。若没有本地 Hadoop，选择 SSH 模式并填写远端命令和 jar 路径。
 
+## CI 与发布
+
+推送到 `main` 或提交 PR 时，[CI](.github/workflows/ci.yml) 会在 Ubuntu 22.04 检查前端构建、Rust 测试和 Python 清洗测试。推送 `v<版本号>` 标签时，[Release](.github/workflows/release.yml) 会检查标签与 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的版本一致，然后构建 Windows x64 NSIS `setup.exe`、Linux x64 AppImage 和 `.deb`。两个平台都成功后才会公开 GitHub Release；失败时草稿保留供排查。
+
+首次发布可直接使用当前 `1.0.0` 版本。后续先同步修改上述三个版本号，并更新 `package-lock.json` 与 `src-tauri/Cargo.lock`，再提交并推送标签，例如：
+
+```sh
+node scripts/verify-release-version.mjs v1.0.0
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+标签应指向已包含工作流的提交。Windows `.exe` 是安装程序；Linux AppImage 下载后需添加执行权限。发布包只包含桌面应用，不内置 Hadoop、Python、MovieLens 数据或 DeepSeek API Key；使用本地 Hadoop 模式时仍需安装 Hadoop，远端模式需配置 SSH。Windows 安装包目前未签名，可能出现系统安全提示。
+
 随后新建对话，输入“清洗共享数据并比较清洗前后的五维质量”。Agent 正常选择 `run_pipeline`，界面展示清洗和对比作业卡片；中间的评估以简短状态行显示运行进度，不显示独立结果卡片。单独请求五维评估时，由 Agent 在回复中解释结果。输入框左侧设置菜单可打开当前对话的清洗规则弹窗；对比卡片的“评分规则”会打开五维评分口径窗口。Agent 运行期间规则弹窗只读。Agent 用 `update_rule` 修改一条规则时，变更会出现在时间线上并可点击定位。流式回答可随时中断。
 
 ## 输出
@@ -39,4 +53,3 @@ npm run tauri dev
 | `src/components/` | 独立页面组件和时间线卡片 |
 
 应用状态和 API Key 当前存于 Tauri 应用数据目录 `state.json`，任务产物存于 `jobs/{job_id}/`。尚未接入系统凭据保险箱，因此应在可信本机使用。任务中断会终止 DeepSeek 流或 Hadoop 客户端，并尽力杀掉可识别的 Hadoop 作业。应用重启时未结束任务会标记失败，避免显示虚假的成功结果。
-
