@@ -1,0 +1,150 @@
+use crate::{model::{Database, Job}, rules, store::AppState};
+use serde_json::Value;
+use std::{collections::HashSet, fs};
+
+fn count(value: &Value) -> u64 { value.as_object().map(|m| m.values().filter_map(Value::as_u64).sum()).unwrap_or(0) }
+pub fn humanize_legacy_report(body: &str) -> String {
+    let mut output = String::new();
+    let mut remaining = body;
+    while let Some(index) = remaining.find("sha256:") {
+        output.push_str(&remaining[..index]);
+        let candidate = &remaining[index + 7..];
+        if candidate.len() >= 64 && candidate.as_bytes()[..64].iter().all(|b| b.is_ascii_hexdigit()) {
+            output.push_str("历史版本（编号未记录）");
+            remaining = &candidate[64..];
+        } else {
+            output.push_str("sha256:");
+            remaining = candidate;
+        }
+    }
+    output.push_str(remaining);
+    let mut output = output.replace("| 规则 ID |", "| 清洗规则 |");
+    for spec in rules::catalog() {
+        output = output.replace(&format!("`{}`", spec.id), &format!("{}：{}", spec.label, spec.description));
+    }
+    output
+}
+fn section(job: &Job) -> String {
+    let result = match &job.result { Some(v) => v, None => return String::new() };
+    let ordinal = if job.display_number == 0 { "历史任务".to_string() } else { format!("第 {} 次", job.display_number) };
+    let mut out = format!("\n## {} · {}\n\n", match job.kind.as_str() {
+        "cleaning" => "数据清洗", "comparison" => "评估对比", _ => "任务" }, ordinal);
+    out.push_str(&format!("规则版本：{}。\n\n", result["rule_version_label"].as_str().unwrap_or("历史规则方案")));
+    match job.kind.as_str() {
+        "cleaning" => {
+            let m = &result["metrics"]; let c = &m["counts"];
+            out.push_str(&format!("原始记录：{}；保留：{}；移除：{}；规范化：{}。\n\n",
+                count(&c["raw"]), count(&c["clean"]), count(&c["removed"]), count(&c["normalized"])));
+            out.push_str(&format!("原始数据版本：`{}`；清洗数据版本：`{}`；算法版本：`{}`。\n\n",
+                result["data_version_label"].as_str().unwrap_or("历史原始数据"),
+                result["clean_data_version_label"].as_str().unwrap_or("历史清洗数据"),
+                result["algorithm_version_label"].as_str().unwrap_or("历史清洗算法")));
+            out.push_str("| 清洗规则 | 规则内容 | 触发移除次数 |\n|---|---|---:|\n");
+            if let Some(map) = c["by_rule"].as_object() {
+                let mut rows: Vec<_> = map.iter().collect();
+                rows.sort_by(|a, b| b.1.as_u64().unwrap_or(0).cmp(&a.1.as_u64().unwrap_or(0)).then_with(|| a.0.cmp(b.0)));
+                for (id, n) in rows {
+                    let (label, description) = rules::describe(id);
+                    out.push_str(&format!("| {} | {} | {} |\n", label, description, n.as_u64().unwrap_or(0)));
+                }
+            }
+            out.push_str("\n所有逐条清洗动作见 `actions.ndjson`。同一记录可触发多条规则，因此各规则触发次数不可直接相加为移除条数。\n");
+        },
+        "comparison" => {
+            out.push_str(&format!("对比任务：{} 与 {}。\n\n| 维度 | 对比前（%） | 对比后（%） | 变化（百分点） |\n|---|---:|---:|---:|\n",
+                result["before_label"].as_str().unwrap_or("前一次五维评估"),
+                result["after_label"].as_str().unwrap_or("后一次五维评估")));
+            for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
+                let v = &result["dimensions"][id];
+                let fmt = |x: &Value| x.as_f64().map(|n| format!("{n:.2}")).unwrap_or("N/A".into());
+                out.push_str(&format!("| {label} | {} | {} | {} |\n", fmt(&v["before"]), fmt(&v["after"]), fmt(&v["change_pp"])));
+            }
+        }, _ => {},
+    }
+    out
+}
+
+fn selected_jobs<'a>(db: &'a Database, conversation_id: &str, run_id: &str) -> Result<Vec<&'a Job>, String> {
+    let conversation = db.conversations.iter().find(|c| c.id == conversation_id).ok_or("对话不存在")?;
+    let mut selected: HashSet<String> = db.jobs.iter().filter(|j| j.conversation_id == conversation_id &&
+        j.run_id.as_deref() == Some(run_id) && j.status == "completed")
+        .map(|j| j.id.clone()).collect();
+    for message in &conversation.messages {
+        if message.run_id.as_deref() == Some(run_id) && message.kind == "report_request" {
+            if let Some(id) = &message.job_id { selected.insert(id.clone()); }
+        }
+    }
+    let parents: Vec<_> = selected.iter().filter(|id| db.jobs.iter().any(|j| &j.id == *id && j.kind == "pipeline")).cloned().collect();
+    for id in parents {
+        for child in db.jobs.iter().filter(|j| j.parent_id.as_deref() == Some(&id)) {
+            selected.insert(child.id.clone());
+        }
+    }
+    let jobs: Vec<_> = db.jobs.iter().filter(|j| j.conversation_id == conversation_id &&
+        selected.contains(&j.id) && j.status == "completed" &&
+        ["cleaning", "comparison"].contains(&j.kind.as_str())).collect();
+    Ok(jobs)
+}
+
+pub fn generate(state: &AppState, conversation_id: &str, run_id: &str) -> Result<Option<Job>, String> {
+    let db = state.snapshot()?;
+    let jobs = selected_jobs(&db, conversation_id, run_id)?;
+    if jobs.is_empty() { return Ok(None); }
+    let report = crate::store::create_job(state, conversation_id, "report", None, Some(run_id.into()))?;
+    let mut body = format!("# MovieLens 数据治理报告\n\n生成时间：{}。\n\n本报告自动汇总本轮工具调用涉及的已完成任务结果。\n", crate::model::now());
+    for job in &jobs { body.push_str(&section(job)); }
+    body.push_str("\n---\n\n评分使用任务记录的规则方案；清洗数据文件和本报告可在本轮消息下方下载。\n");
+    let dir = state.root.join("jobs").join(&report.id);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join("report.md"), &body).map_err(|e| e.to_string())?;
+    state.change(|db| { let job = db.jobs.iter_mut().find(|j| j.id == report.id).ok_or("报告任务不存在")?;
+        job.status = "completed".into(); job.stage = "报告已生成".into();
+        job.result = Some(serde_json::json!({"files":["report.md"],"source_job_ids":jobs.iter().map(|j| &j.id).collect::<Vec<_>>() }));
+        job.updated_at = crate::model::now(); Ok(()) })?;
+    Ok(Some(report))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Conversation, Message};
+    #[test]
+    fn referenced_pipeline_expands_completed_children() {
+        let mut db = Database::default();
+        db.conversations.push(Conversation { id: "c".into(), messages: vec![Message {
+            run_id: Some("new-run".into()), kind: "report_request".into(), job_id: Some("p".into()), ..Message::default()
+        }], ..Conversation::default() });
+        db.jobs.push(Job { id: "p".into(), conversation_id: "c".into(), kind: "pipeline".into(),
+            status: "completed".into(), ..Job::default() });
+        db.jobs.push(Job { id: "clean".into(), conversation_id: "c".into(), kind: "cleaning".into(),
+            parent_id: Some("p".into()), status: "completed".into(), ..Job::default() });
+        db.jobs.push(Job { id: "failed".into(), conversation_id: "c".into(), kind: "assessment".into(),
+            parent_id: Some("p".into()), status: "failed".into(), ..Job::default() });
+        assert_eq!(selected_jobs(&db, "c", "new-run").unwrap().iter().map(|j| j.id.as_str()).collect::<Vec<_>>(), vec!["clean"]);
+    }
+    #[test]
+    fn standalone_assessment_is_not_reported() {
+        let mut db = Database::default();
+        db.conversations.push(Conversation { id: "c".into(), ..Conversation::default() });
+        db.jobs.push(Job { id: "a".into(), conversation_id: "c".into(), kind: "assessment".into(),
+            run_id: Some("run".into()), status: "completed".into(), ..Job::default() });
+        assert!(selected_jobs(&db, "c", "run").unwrap().is_empty());
+    }
+    #[test]
+    fn reading_historical_cleaning_does_not_create_report() {
+        let mut db = Database::default();
+        db.conversations.push(Conversation { id: "c".into(), messages: vec![Message {
+            run_id: Some("query".into()), kind: "tool_ref".into(), job_id: Some("old".into()), ..Message::default()
+        }], ..Conversation::default() });
+        db.jobs.push(Job { id: "old".into(), conversation_id: "c".into(), kind: "cleaning".into(),
+            run_id: Some("old-run".into()), status: "completed".into(), ..Job::default() });
+        assert!(selected_jobs(&db, "c", "query").unwrap().is_empty());
+    }
+    #[test]
+    fn old_hashes_are_hidden_in_report_view() {
+        let hash = format!("sha256:{}", "a".repeat(64));
+        assert_eq!(humanize_legacy_report(&format!("版本 {hash}")), "版本 历史版本（编号未记录）");
+        let old = humanize_legacy_report("| 规则 ID | 触发次数 |\n| `schema_fields` | 2 |");
+        assert!(old.contains("字段数量：users/movies/ratings 必须分别有 5/3/4 个字段"));
+    }
+}

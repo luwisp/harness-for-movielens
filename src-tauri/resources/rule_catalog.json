@@ -1,0 +1,305 @@
+[
+  {
+    "id": "schema_fields",
+    "category": "基础解析",
+    "label": "字段数量",
+    "description": "users/movies/ratings 必须分别有 5/3/4 个字段。",
+    "required": true,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "required_values",
+    "category": "基础解析",
+    "label": "必填字段非空",
+    "description": "任何字段为空或只有空白时隔离该记录。",
+    "required": true,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "trim_fields",
+    "category": "规范化",
+    "label": "修剪字段空白",
+    "description": "保留记录时去除字段两侧空白，并记录修正。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "normalize_genres",
+    "category": "规范化",
+    "label": "规范化电影类型",
+    "description": "修剪类型名两侧空白，并去掉同一电影记录中的重复类型。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "user_id_positive",
+    "category": "用户字段",
+    "label": "用户 ID 为正整数",
+    "description": "users.dat 的 UserID 必须为规范写法的正整数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "user_gender_domain",
+    "category": "用户字段",
+    "label": "性别类别",
+    "description": "Gender 只能为 F 或 M。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "user_age_domain",
+    "category": "用户字段",
+    "label": "年龄类别",
+    "description": "Age 只能为 MovieLens 已知七种类别编码。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "user_occupation_range",
+    "category": "用户字段",
+    "label": "职业编码范围",
+    "description": "Occupation 必须是区间内的整数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "range",
+    "default_value": { "min": 0, "max": 20 },
+    "min": 0,
+    "max": 100
+  },
+  {
+    "id": "user_zip_format",
+    "category": "用户字段",
+    "label": "邮编格式",
+    "description": "可选校验五位或五位加四位美国邮编；始终按字符串保存。",
+    "required": false,
+    "default_enabled": false,
+    "input": "toggle"
+  },
+  {
+    "id": "movie_id_positive",
+    "category": "电影字段",
+    "label": "电影 ID 为正整数",
+    "description": "movies.dat 的 MovieID 必须为规范写法的正整数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "movie_genre_domain",
+    "category": "电影字段",
+    "label": "电影类型目录",
+    "description": "各个 Genres 必须属于 MovieLens 已知的 18 种类型。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "movie_genre_unique",
+    "category": "电影字段",
+    "label": "电影类型不重复",
+    "description": "规范化之后仍重复的类型视为问题。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "movie_title_year",
+    "category": "电影字段",
+    "label": "片名年份格式",
+    "description": "可选要求 Title 以四位年份括号结尾。",
+    "required": false,
+    "default_enabled": false,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_user_id_positive",
+    "category": "评分字段",
+    "label": "评分用户 ID 为正整数",
+    "description": "ratings.dat 的 UserID 必须为规范写法的正整数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_movie_id_positive",
+    "category": "评分字段",
+    "label": "评分电影 ID 为正整数",
+    "description": "ratings.dat 的 MovieID 必须为规范写法的正整数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_integer",
+    "category": "评分字段",
+    "label": "评分为整数",
+    "description": "Rating 必须是规范写法的整数；关闭后允许范围内小数。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_range",
+    "category": "评分字段",
+    "label": "评分取值范围",
+    "description": "Rating 必须在指定闭区间内。",
+    "required": false,
+    "default_enabled": true,
+    "input": "range",
+    "default_value": { "min": 1, "max": 5 },
+    "min": 0,
+    "max": 10
+  },
+  {
+    "id": "timestamp_integer",
+    "category": "评分字段",
+    "label": "时间戳为整数",
+    "description": "Timestamp 必须是规范写法的 Unix 秒。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "timestamp_range",
+    "category": "评分字段",
+    "label": "历史时间范围",
+    "description": "Timestamp 必须在指定 Unix 秒闭区间内。",
+    "required": false,
+    "default_enabled": true,
+    "input": "range",
+    "default_value": { "min": 946684800, "max": 1044057600 },
+    "min": 0,
+    "max": 4102444800
+  },
+  {
+    "id": "unique_users",
+    "category": "去重",
+    "label": "用户 ID 唯一",
+    "description": "同一 UserID 只保留首条可接受记录。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "unique_movies",
+    "category": "去重",
+    "label": "电影 ID 唯一",
+    "description": "同一 MovieID 只保留首条可接受记录。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "unique_ratings",
+    "category": "去重",
+    "label": "评分事件唯一",
+    "description": "同一 UserID、MovieID、Timestamp 只保留首条可接受记录。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "consistent_users",
+    "category": "关联一致性",
+    "label": "同一用户属性一致",
+    "description": "同一 UserID 的有效属性记录不能冲突。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "consistent_movies",
+    "category": "关联一致性",
+    "label": "同一电影属性一致",
+    "description": "同一 MovieID 的有效标题与类型不能冲突。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_user_exists",
+    "category": "关联一致性",
+    "label": "评分用户存在",
+    "description": "评分引用的 UserID 必须存在于保留的用户记录中。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "rating_movie_exists",
+    "category": "关联一致性",
+    "label": "评分电影存在",
+    "description": "评分引用的 MovieID 必须存在于保留的电影记录中。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "score_accurate",
+    "category": "质量评估",
+    "label": "准确性评分",
+    "description": "检查已知字段取值域和格式；无法证明现实真实性。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "score_complete",
+    "category": "质量评估",
+    "label": "完整性评分",
+    "description": "统计字段数正确且必填字段非空的记录。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "score_unique",
+    "category": "质量评估",
+    "label": "唯一性评分",
+    "description": "按各表业务键统计重复记录。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "score_consistent",
+    "category": "质量评估",
+    "label": "一致性评分",
+    "description": "统计同 ID 属性冲突、重复类型与评分跨表引用。",
+    "required": false,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
+    "id": "score_freshness",
+    "category": "质量评估",
+    "label": "时效窗口",
+    "description": "评分时间位于历史参照时间之前指定天数内。",
+    "required": false,
+    "default_enabled": true,
+    "input": "integer",
+    "default_value": 365,
+    "min": 1,
+    "max": 36500
+  },
+  {
+    "id": "score_reference",
+    "category": "质量评估",
+    "label": "时效参照时间",
+    "description": "Unix 秒；0 表示取当前数据中最大有效评分时间。",
+    "required": false,
+    "default_enabled": true,
+    "input": "integer",
+    "default_value": 0,
+    "min": 0,
+    "max": 4102444800
+  }
+]
