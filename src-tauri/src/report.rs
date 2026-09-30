@@ -51,14 +51,34 @@ fn section(job: &Job) -> String {
             out.push_str("\n所有逐条清洗动作见 `actions.ndjson`。同一记录可触发多条规则，因此各规则触发次数不可直接相加为移除条数。\n");
         },
         "comparison" => {
-            out.push_str(&format!("对比任务：{} 与 {}。\n\n| 维度 | 对比前（%） | 对比后（%） | 变化（百分点） |\n|---|---:|---:|---:|\n",
+            out.push_str(&format!("对比任务：{} 与 {}。\n\n评分规范：v2。\n\n",
                 result["before_label"].as_str().unwrap_or("前一次五维评估"),
                 result["after_label"].as_str().unwrap_or("后一次五维评估")));
+            out.push_str("`Q[d,t] = 100 × G[d,t] / E[d,t]`；`A[d,t] = 100 × E[d,t] / N[t]`；`Y[d,t] = 100 × G[d,t,清洗后] / N[t,原始]`。G 为合格行数，E 为可评估行数，N 为实际行数；三表等权平均，时间维度只适用 ratings。无分母时记 N/A。\n\n");
+            out.push_str("`n[u] = |{MovieID : 用户 u 的可信评分引用有效电影}|`；`C20 = 100 × #{u : n[u] ≥ 20} / 有效且唯一的用户数`。低于 20 部的用户不会因此被清洗删除。\n\n");
+            out.push_str("| 维度 | 清洗前 Q（%） | 清洗后 Q（%） | 变化（百分点） | 清洗后 A（%） | 有效留存 Y（%） |\n|---|---:|---:|---:|---:|---:|\n");
             for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
                 let v = &result["dimensions"][id];
                 let fmt = |x: &Value| x.as_f64().map(|n| format!("{n:.2}")).unwrap_or("N/A".into());
-                out.push_str(&format!("| {label} | {} | {} | {} |\n", fmt(&v["before"]), fmt(&v["after"]), fmt(&v["change_pp"])));
+                out.push_str(&format!("| {label} | {} | {} | {} | {} | {} |\n", fmt(&v["before"]), fmt(&v["after"]), fmt(&v["change_pp"]), fmt(&v["coverage_after"]), fmt(&v["yield"])));
             }
+            out.push_str("\n| 维度 | 数据表 | 清洗前 G/E | 清洗后 G/E | 原始行数 | 有效留存 Y（%） |\n|---|---|---:|---:|---:|---:|\n");
+            for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
+                for (kind,table) in [("0","users"),("1","movies"),("2","ratings")] {
+                    let v = &result["dimensions"][id]["tables"][kind];
+                    if v.is_null() { continue; }
+                    let n = |x: &Value| x.as_u64().unwrap_or(0);
+                    out.push_str(&format!("| {label} | {table} | {}/{} | {}/{} | {} | {} |\n",
+                        n(&v["before"]["good"]), n(&v["before"]["eligible"]),
+                        n(&v["after"]["good"]), n(&v["after"]["eligible"]),
+                        n(&v["before"]["total"]),
+                        v["yield"].as_f64().map(|x| format!("{x:.2}")).unwrap_or("N/A".into())));
+                }
+            }
+            let cohort = &result["cohort20_after"];
+            out.push_str(&format!("\n20 部不同电影达标：{} / {} 名有效用户；未达标 {} 名。\n",
+                cohort["qualified_users"].as_u64().unwrap_or(0), cohort["evaluable_users"].as_u64().unwrap_or(0),
+                cohort["under_threshold_users"].as_u64().unwrap_or(0)));
         }, _ => {},
     }
     out

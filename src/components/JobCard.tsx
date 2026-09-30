@@ -7,7 +7,7 @@ const labels: Record<string, string> = {
   consistent: "一致性",
   up_to_date: "时效性",
 };
-const number = (v: unknown) => (typeof v === "number" ? v.toFixed(2) : "N/A");
+const number = (v: unknown) => (typeof v === "number" ? `${v.toFixed(2)}%` : "N/A");
 const total = (v: any) =>
   Object.values(v || {}).reduce<number>((a, b) => a + (Number(b) || 0), 0);
 export function JobCard({
@@ -121,6 +121,8 @@ export function JobCard({
                 <th>清洗前</th>
                 <th>清洗后</th>
                 <th>变化</th>
+                <th>清洗后覆盖</th>
+                <th>有效留存</th>
               </tr>
             </thead>
             <tbody>
@@ -129,18 +131,43 @@ export function JobCard({
                 return (
                   <tr key={id}>
                     <td>{label}</td>
-                    <td>{number(d.before)}%</td>
-                    <td>{number(d.after)}%</td>
+                    <td>{number(d.before)}</td>
+                    <td>{number(d.after)}</td>
                     <td>
                       {typeof d.change_pp === "number"
-                        ? `${d.change_pp >= 0 ? "+" : ""}${number(d.change_pp)} pp`
+                        ? `${d.change_pp >= 0 ? "+" : ""}${d.change_pp.toFixed(2)} pp`
                         : "N/A"}
                     </td>
+                    <td>{number(d.coverage_after)}</td>
+                    <td>{number(d.yield)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          {r.cohort20_after && (
+            <p className="muted">
+              ≥20 部不同电影：{r.cohort20_after.qualified_users} / {r.cohort20_after.evaluable_users} 名有效用户
+              （{number(r.cohort20_after.rate)}）；未达标用户仍保留。
+            </p>
+          )}
+          <details>
+            <summary>查看各表分子、分母与有效留存</summary>
+            <table>
+              <thead><tr><th>维度</th><th>表</th><th>清洗前 G/E</th><th>清洗后 G/E</th><th>原始行数</th><th>有效留存</th></tr></thead>
+              <tbody>
+                {Object.entries(labels).flatMap(([id, label]) =>
+                  Object.entries(r.dimensions?.[id]?.tables || {}).map(([table, stats]: [string, any]) => (
+                    <tr key={`${id}-${table}`}>
+                      <td>{label}</td><td>{({"0":"users","1":"movies","2":"ratings"} as Record<string,string>)[table]}</td>
+                      <td>{stats.before?.good} / {stats.before?.eligible}</td>
+                      <td>{stats.after?.good} / {stats.after?.eligible}</td>
+                      <td>{stats.before?.total}</td><td>{number(stats.yield)}</td>
+                    </tr>
+                  ))) }
+              </tbody>
+            </table>
+          </details>
         </>
       )}
     </div>

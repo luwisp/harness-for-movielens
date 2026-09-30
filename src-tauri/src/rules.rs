@@ -24,6 +24,13 @@ pub fn default_rules() -> Rules {
     })).collect::<BTreeMap<_,_>>() }
 }
 pub fn normalize(rules: &mut Rules) {
+    // v1 relative freshness cannot be converted to a fixed historical window.
+    if let Some(old) = rules.entries.remove("score_freshness") {
+        rules.entries.entry("score_up_to_date".into()).or_insert(RuleEntry {
+            enabled: old.enabled, value: None,
+        });
+    }
+    rules.entries.remove("score_reference");
     for spec in catalog() { rules.entries.entry(spec.id).or_insert(RuleEntry {
         enabled: spec.default_enabled, value: spec.default_value,
     }); }

@@ -31,12 +31,7 @@ fn migrate_legacy_rules(state: &mut serde_json::Value) -> Result<(), String> {
     if let Some(value) = legacy["trim_fields"].as_bool() {
         rules::update(&mut updated, "trim_fields", Some(value), None)?;
     }
-    if let Some(value) = legacy["freshness_days"].as_u64() {
-        rules::update(&mut updated, "score_freshness", None, Some(serde_json::json!(value)))?;
-    }
-    if let Some(value) = legacy["reference_timestamp"].as_i64() {
-        rules::update(&mut updated, "score_reference", None, Some(serde_json::json!(value)))?;
-    }
+    // Relative freshness settings have no equivalent in the fixed v2 historical window.
     state["settings"]["rules"] = serde_json::to_value(updated).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -332,7 +327,8 @@ mod tests {
         let rules: Rules = serde_json::from_value(value["settings"]["rules"].clone()).unwrap();
         assert!(!rules.entries["unique_ratings"].enabled);
         assert!(!rules.entries["rating_user_exists"].enabled);
-        assert_eq!(rules.entries["score_freshness"].value, Some(serde_json::json!(30)));
+        assert_eq!(rules.entries["score_time_window"].value,
+            Some(serde_json::json!({"min":954547200,"max":1046476799})));
     }
 
     #[test]

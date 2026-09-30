@@ -1,5 +1,14 @@
 [
   {
+    "id": "schema_delimiter",
+    "category": "基础解析",
+    "label": "双冒号分隔符",
+    "description": "记录必须使用 :: 分隔字段；完全没有 :: 的记录按分隔符错误隔离。",
+    "required": true,
+    "default_enabled": true,
+    "input": "toggle"
+  },
+  {
     "id": "schema_fields",
     "category": "基础解析",
     "label": "字段数量",
@@ -43,6 +52,18 @@
     "required": false,
     "default_enabled": true,
     "input": "toggle"
+  },
+  {
+    "id": "user_id_range",
+    "category": "用户字段",
+    "label": "用户 ID 范围",
+    "description": "可选检查 users.dat 的 UserID 是否位于指定闭区间；MovieLens 1M 默认参考范围为 1–6040。",
+    "required": false,
+    "default_enabled": false,
+    "input": "range",
+    "default_value": { "min": 1, "max": 6040 },
+    "min": 1,
+    "max": 2147483647
   },
   {
     "id": "user_gender_domain",
@@ -93,6 +114,18 @@
     "input": "toggle"
   },
   {
+    "id": "movie_id_range",
+    "category": "电影字段",
+    "label": "电影 ID 范围",
+    "description": "可选检查 movies.dat 的 MovieID 是否位于指定闭区间；MovieLens 1M 默认参考范围为 1–3952，编号不要求连续。",
+    "required": false,
+    "default_enabled": false,
+    "input": "range",
+    "default_value": { "min": 1, "max": 3952 },
+    "min": 1,
+    "max": 2147483647
+  },
+  {
     "id": "movie_genre_domain",
     "category": "电影字段",
     "label": "电影类型目录",
@@ -120,6 +153,18 @@
     "input": "toggle"
   },
   {
+    "id": "movie_title_year_max",
+    "category": "电影字段",
+    "label": "片名年份上限",
+    "description": "可选检查片名末尾 (YYYY) 中的年份不超过指定值；未带年份时由片名年份格式规则单独判断。",
+    "required": false,
+    "default_enabled": false,
+    "input": "integer",
+    "default_value": 2003,
+    "min": 1,
+    "max": 9999
+  },
+  {
     "id": "rating_user_id_positive",
     "category": "评分字段",
     "label": "评分用户 ID 为正整数",
@@ -140,8 +185,8 @@
   {
     "id": "rating_integer",
     "category": "评分字段",
-    "label": "评分为整数",
-    "description": "Rating 必须是规范写法的整数；关闭后允许范围内小数。",
+    "label": "评分为规范正整数",
+    "description": "Rating 必须是规范写法的正整数；关闭后允许范围内小数。",
     "required": false,
     "default_enabled": true,
     "input": "toggle"
@@ -255,7 +300,7 @@
     "id": "score_complete",
     "category": "质量评估",
     "label": "完整性评分",
-    "description": "统计字段数正确且必填字段非空的记录。",
+    "description": "统计结构完整且必填非空的记录；有效用户还需至少评价 20 部不同电影，此项不会删除用户。",
     "required": false,
     "default_enabled": true,
     "input": "toggle"
@@ -279,26 +324,23 @@
     "input": "toggle"
   },
   {
-    "id": "score_freshness",
+    "id": "score_up_to_date",
     "category": "质量评估",
-    "label": "时效窗口",
-    "description": "评分时间位于历史参照时间之前指定天数内。",
+    "label": "历史时间适配性评分",
+    "description": "评分时间为规范 Unix 秒且位于设定的历史采集窗口；不按距今时间扣分。",
     "required": false,
     "default_enabled": true,
-    "input": "integer",
-    "default_value": 365,
-    "min": 1,
-    "max": 36500
+    "input": "toggle"
   },
   {
-    "id": "score_reference",
+    "id": "score_time_window",
     "category": "质量评估",
-    "label": "时效参照时间",
-    "description": "Unix 秒；0 表示取当前数据中最大有效评分时间。",
-    "required": false,
+    "label": "历史采集时间窗口",
+    "description": "Unix 秒闭区间，默认覆盖 2000-04-01 至 2003-02-28 UTC；与清洗时间规则分别配置。",
+    "required": true,
     "default_enabled": true,
-    "input": "integer",
-    "default_value": 0,
+    "input": "range",
+    "default_value": { "min": 954547200, "max": 1046476799 },
     "min": 0,
     "max": 4102444800
   }

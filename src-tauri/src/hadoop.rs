@@ -383,6 +383,7 @@ pub fn run_assessment(state: &AppState, app: &AppHandle, job: &Job, settings: &S
     let metrics = stream_job(&runner, settings, &work, inputs, &output, rules, "assess", utf8_input, reference_override)?;
     let data_version = source.get("data_version").or_else(|| source.get("clean_data_version")).cloned();
     let result = json!({"job_id":job.id,"kind":"assessment","source":source,"data_version":data_version,
+        "score_spec_version":metrics["score_spec_version"],
         "hdfs_job_root":root,"hadoop_connection":location["hadoop_connection"],
         "data_version_label":source.get("data_version_label").or_else(|| source.get("clean_data_version_label")),
         "rule_version":crate::rules::version(rules),
@@ -402,35 +403,63 @@ pub fn run_assessment(state: &AppState, app: &AppHandle, job: &Job, settings: &S
 pub fn compare(state: &AppState, first: &Job, second: &Job, job: &Job) -> Result<Value, String> {
     let a = first.result.as_ref().ok_or("第一个评估没有结果")?;
     let b = second.result.as_ref().ok_or("第二个评估没有结果")?;
-    if a["rule_version"] != b["rule_version"] { return Err("两次评估规则版本不同，无法直接对比".into()); }
     if a["algorithm_version"] != b["algorithm_version"] { return Err("两次评估算法版本不同，无法直接对比".into()); }
-    if a["metrics"]["reference_timestamp"] != b["metrics"]["reference_timestamp"] {
-        return Err("两次评估时效参照时间不同，无法直接对比".into());
+    if a["score_spec_version"] != "quality-spec-v2" || b["score_spec_version"] != "quality-spec-v2" {
+        return Err("旧版五维评估已弃用，请重新运行评估".into());
+    }
+    if a["score_spec_version"] != b["score_spec_version"] { return Err("两次评估评分规范不同，无法直接对比".into()); }
+    if a["metrics"]["time_window"] != b["metrics"]["time_window"] {
+        return Err("两次评估历史时间窗口不同，无法直接对比".into());
+    }
+    fn source_version(v: &Value) -> Option<&str> {
+        let source = v.get("source")?;
+        source.get("source_data_version").and_then(Value::as_str)
+            .or_else(|| source.get("data_version").and_then(Value::as_str))
+    }
+    if source_version(a).is_none() || source_version(a) != source_version(b) {
+        return Err("清洗前后评估不属于同一原始数据版本".into());
     }
     let mut delta = serde_json::Map::new();
     for name in ["accurate", "complete", "unique", "consistent", "up_to_date"] {
         let score = |v: &Value| -> Option<f64> {
             if v["metrics"]["enabled"][name] == false { return None; }
-            let m = &v["metrics"]["scores"];
-            let good = m[format!("{name}_good")].as_f64().unwrap_or(0.0);
-            let eligible = m[format!("{name}_eligible")].as_f64()?;
-            (eligible > 0.0).then_some(good / eligible * 100.0)
+            v["metrics"]["dimensions"][name]["score"].as_f64()
         };
         let old = score(a); let new = score(b);
-        delta.insert(name.into(), json!({"before":old,"after":new,"change_pp":old.zip(new).map(|(x,y)| y-x)}));
+        let mut value = json!({"before":old,"after":new,"change_pp":old.zip(new).map(|(x,y)| y-x)});
+        {
+            value["coverage_before"] = a["metrics"]["dimensions"][name]["coverage"].clone();
+            value["coverage_after"] = b["metrics"]["dimensions"][name]["coverage"].clone();
+            let mut by_table = serde_json::Map::new();
+            for kind in if name == "up_to_date" { vec!["2"] } else { vec!["0", "1", "2"] } {
+                let old_table = &a["metrics"]["dimensions"][name]["tables"][kind];
+                let new_table = &b["metrics"]["dimensions"][name]["tables"][kind];
+                let denominator = old_table["total"].as_f64().unwrap_or(0.0);
+                let good = new_table["good"].as_f64().unwrap_or(0.0);
+                by_table.insert(kind.into(), json!({"before":old_table,"after":new_table,
+                    "yield":(denominator > 0.0).then_some(good / denominator * 100.0)}));
+            }
+            let yields: Vec<f64> = by_table.values().filter_map(|x| x["yield"].as_f64()).collect();
+            value["tables"] = json!(by_table);
+            value["yield"] = json!((!yields.is_empty()).then_some(yields.iter().sum::<f64>() / yields.len() as f64));
+        }
+        delta.insert(name.into(), value);
     }
     let rule_label = if a["rule_version_label"] == b["rule_version_label"] {
         a["rule_version_label"].as_str().unwrap_or("历史规则方案").to_string()
     } else {
-        format!("相同规则内容（{} / {}）",
+        format!("清洗前 {} / 清洗后 {}",
             a["rule_version_label"].as_str().unwrap_or("历史规则方案"),
             b["rule_version_label"].as_str().unwrap_or("历史规则方案"))
     };
     let result = json!({"job_id":job.id,"kind":"comparison","before_job_id":first.id,
-        "after_job_id":second.id,"rule_version":a["rule_version"],"rules":a["rules"],
+        "after_job_id":second.id,"rule_version":b["rule_version"],"rules":b["rules"],
         "before_label":if first.display_number == 0 { "历史五维评估".to_string() } else { format!("五维评估 #{}",first.display_number) },
         "after_label":if second.display_number == 0 { "历史五维评估".to_string() } else { format!("五维评估 #{}",second.display_number) },
         "rule_version_label":rule_label,"algorithm_version_label":a["algorithm_version_label"],
+        "score_spec_version":a["score_spec_version"],
+        "time_window":a["metrics"]["time_window"],
+        "cohort20_before":a["metrics"]["cohort20"],"cohort20_after":b["metrics"]["cohort20"],
         "reference_timestamp":a["metrics"]["reference_timestamp"],
         "dimensions":delta,"files":[]});
     write_report_json(&work_dir(state, &job.id)?, &result)?;
@@ -492,7 +521,10 @@ fn public_artifact(kind: &str, name: &str) -> bool {
 
 #[cfg(test)]
 mod artifact_tests {
-    use super::public_artifact;
+    use super::{compare, public_artifact};
+    use crate::{model::{Database, Job}, store::AppState};
+    use serde_json::json;
+    use std::{collections::HashMap, fs, sync::{atomic::AtomicBool, Mutex}};
     #[test]
     fn assessments_and_comparisons_cannot_export_internal_reports() {
         assert!(public_artifact("cleaning", "ratings.dat"));
@@ -502,5 +534,37 @@ mod artifact_tests {
             assert!(!public_artifact(kind, "report.md"));
         }
         assert!(!public_artifact("cleaning", "report.json"));
+    }
+    #[test]
+    fn v2_comparison_uses_original_denominator_across_cleaning_rules() {
+        let root = std::env::temp_dir().join(format!("ml1m-compare-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let state = AppState { root: root.clone(), db: Mutex::new(Database::default()),
+            runs: Mutex::new(HashMap::new()), uploads: Mutex::new(HashMap::new()),
+            source_busy: AtomicBool::new(false) };
+        let metrics = |good: u64, total: u64| {
+            let mut dimensions = serde_json::Map::new();
+            for name in ["accurate", "complete", "unique", "consistent", "up_to_date"] {
+                dimensions.insert(name.into(), json!({"score":good as f64 / total as f64 * 100.0,
+                    "coverage":100.0,"tables":{"2":{"good":good,"eligible":total,"total":total}}}));
+            }
+            json!({"enabled":{"accurate":true,"complete":true,"unique":true,"consistent":true,"up_to_date":true},
+                "time_window":{"min":954547200,"max":1046476799},"dimensions":dimensions,
+                "cohort20":{"qualified_users":1,"evaluable_users":2,"under_threshold_users":1}})
+        };
+        let make_job = |id: &str, rule: &str, source: serde_json::Value, metrics: serde_json::Value| Job {
+            id: id.into(), kind: "assessment".into(), status: "completed".into(),
+            result: Some(json!({"score_spec_version":"quality-spec-v2","rule_version":rule,
+                "rule_version_label":rule,"algorithm_version":"same","source":source,
+                "metrics":metrics,"rules":{}})), ..Job::default()
+        };
+        let before = make_job("before", "rule-a", json!({"data_version":"source-a"}), metrics(8, 10));
+        let after = make_job("after", "rule-b", json!({"source_data_version":"source-a"}), metrics(7, 7));
+        let comparison = Job { id: "comparison".into(), ..Job::default() };
+        let result = compare(&state, &before, &after, &comparison).unwrap();
+        assert_eq!(result["dimensions"]["accurate"]["after"], 100.0);
+        assert_eq!(result["dimensions"]["accurate"]["yield"], 70.0);
+        assert_eq!(result["dimensions"]["accurate"]["tables"]["2"]["before"]["total"], 10);
+        fs::remove_dir_all(root).unwrap();
     }
 }

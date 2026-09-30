@@ -15,6 +15,7 @@ export function Composer({
   const [value, setValue] = useState("");
   const [menu, setMenu] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (box.current) {
       box.current.style.height = "28px";
@@ -31,11 +32,29 @@ export function Composer({
       setValue(content);
     }
   };
+  useEffect(() => {
+    if (!menu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [menu]);
   return (
     <div className="composer-area">
       <div className="composer">
         <div className="composer-row">
-          <div className="composer-menu">
+          <div className="composer-menu" ref={menuRef}>
             <button
               className="icon-button"
               title="对话选项"
