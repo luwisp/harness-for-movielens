@@ -459,6 +459,8 @@ pub fn compare(state: &AppState, first: &Job, second: &Job, job: &Job) -> Result
         "rule_version_label":rule_label,"algorithm_version_label":a["algorithm_version_label"],
         "score_spec_version":a["score_spec_version"],
         "time_window":a["metrics"]["time_window"],
+        "time_boundaries":{"before":{"t1":a["metrics"]["t1"],"t2":a["metrics"]["t2"]},
+            "after":{"t1":b["metrics"]["t1"],"t2":b["metrics"]["t2"]}},
         "cohort20_before":a["metrics"]["cohort20"],"cohort20_after":b["metrics"]["cohort20"],
         "reference_timestamp":a["metrics"]["reference_timestamp"],
         "dimensions":delta,"files":[]});
@@ -550,6 +552,7 @@ mod artifact_tests {
             }
             json!({"enabled":{"accurate":true,"complete":true,"unique":true,"consistent":true,"up_to_date":true},
                 "time_window":{"min":954547200,"max":1046476799},"dimensions":dimensions,
+                "t1":1000000000 + good,"t2":1000000100 + good,
                 "cohort20":{"qualified_users":1,"evaluable_users":2,"under_threshold_users":1}})
         };
         let make_job = |id: &str, rule: &str, source: serde_json::Value, metrics: serde_json::Value| Job {
@@ -565,6 +568,8 @@ mod artifact_tests {
         assert_eq!(result["dimensions"]["accurate"]["after"], 100.0);
         assert_eq!(result["dimensions"]["accurate"]["yield"], 70.0);
         assert_eq!(result["dimensions"]["accurate"]["tables"]["2"]["before"]["total"], 10);
+        assert_eq!(result["time_boundaries"]["before"]["t1"], 1000000008_u64);
+        assert_eq!(result["time_boundaries"]["after"]["t2"], 1000000107_u64);
         fs::remove_dir_all(root).unwrap();
     }
 }

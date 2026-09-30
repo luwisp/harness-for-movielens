@@ -3,6 +3,17 @@ use serde_json::Value;
 use std::{collections::HashSet, fs};
 
 fn count(value: &Value) -> u64 { value.as_object().map(|m| m.values().filter_map(Value::as_u64).sum()).unwrap_or(0) }
+fn format_utc_timestamp(value: Option<i64>) -> String {
+    value.and_then(|seconds| chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)
+        .map(|time| format!("{}（Unix 秒 {seconds}）", time.format("%Y-%m-%d %H:%M:%S UTC"))))
+        .unwrap_or_else(|| "N/A".into())
+}
+fn comparison_boundary(result: &Value, jobs: &[Job], side: &str, name: &str) -> Option<i64> {
+    result["time_boundaries"][side][name].as_i64().or_else(|| {
+        let id = result[if side == "before" { "before_job_id" } else { "after_job_id" }].as_str()?;
+        jobs.iter().find(|job| job.id == id)?.result.as_ref()?["metrics"][name].as_i64()
+    })
+}
 fn score_check_label(id: &str) -> &str {
     match id {
         "schema_fields" => "字段数", "required_values" => "必填为空",
@@ -38,7 +49,7 @@ pub fn humanize_legacy_report(body: &str) -> String {
     }
     output
 }
-fn section(job: &Job) -> String {
+fn section(job: &Job, all_jobs: &[Job]) -> String {
     let result = match &job.result { Some(v) => v, None => return String::new() };
     let ordinal = if job.display_number == 0 { "历史任务".to_string() } else { format!("第 {} 次", job.display_number) };
     let mut out = format!("\n## {} · {}\n\n", match job.kind.as_str() {
@@ -68,8 +79,15 @@ fn section(job: &Job) -> String {
             out.push_str(&format!("对比任务：{} 与 {}。\n\n评分规范：v2。\n\n",
                 result["before_label"].as_str().unwrap_or("前一次五维评估"),
                 result["after_label"].as_str().unwrap_or("后一次五维评估")));
-            out.push_str("`Q[d,t] = 100 × G[d,t] / E[d,t]`；`A[d,t] = 100 × E[d,t] / N[t]`；`Y[d,t] = 100 × G[d,t,清洗后] / N[t,原始]`。G 为合格行数，E 为可评估行数，N 为实际行数；三表等权平均，时间维度只适用 ratings。无分母时记 N/A。\n\n");
-            out.push_str("`n[u] = |{MovieID : 用户 u 的可信评分引用唯一有效电影}|`；`C20 = 100 × #{u : n[u] ≥ 20} / 有效且唯一的用户数`。可信评分须为 1–5 规范整数、处于历史时间窗口且事件无冲突。低于 20 部的用户不会因此被清洗删除。\n\n");
+            // out.push_str("`Q[d,t] = 100 × G[d,t] / E[d,t]`；`A[d,t] = 100 × E[d,t] / N[t]`；`Y[d,t] = 100 × G[d,t,清洗后] / N[t,原始]`。G 为合格行数，E 为可评估行数，N 为实际行数；三表等权平均，时间维度只适用 ratings。无分母时记 N/A。\n\n");
+            // out.push_str("`n[u] = |{MovieID : 用户 u 的可信评分引用唯一有效电影}|`；`C20 = 100 × #{u : n[u] ≥ 20} / 有效且唯一的用户数`。可信评分须为 1–5 规范整数、处于历史时间窗口且事件无冲突。低于 20 部的用户不会因此被清洗删除。\n\n");
+            out.push_str("| 时间切分点 | 对比前评估 | 对比后评估 |\n|---|---|---|\n");
+            for name in ["t1", "t2"] {
+                out.push_str(&format!("| {} | {} | {} |\n", name.to_uppercase(),
+                    format_utc_timestamp(comparison_boundary(result, all_jobs, "before", name)),
+                    format_utc_timestamp(comparison_boundary(result, all_jobs, "after", name))));
+            }
+            out.push_str("\nT1/T2 由两侧评估数据分别计算，目前仅供参考，未用于建模划分。\n\n");
             out.push_str("| 维度 | 清洗前 Q（%） | 清洗后 Q（%） | 变化（百分点） | 清洗后 A（%） | 有效留存 Y（%） |\n|---|---:|---:|---:|---:|---:|\n");
             for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
                 let v = &result["dimensions"][id];
@@ -93,10 +111,10 @@ fn section(job: &Job) -> String {
                         v["yield"].as_f64().map(|x| format!("{x:.2}")).unwrap_or("N/A".into()), failures));
                 }
             }
-            let cohort = &result["cohort20_after"];
-            out.push_str(&format!("\n20 部不同电影达标：{} / {} 名有效用户；未达标 {} 名。\n",
-                cohort["qualified_users"].as_u64().unwrap_or(0), cohort["evaluable_users"].as_u64().unwrap_or(0),
-                cohort["under_threshold_users"].as_u64().unwrap_or(0)));
+            // let cohort = &result["cohort20_after"];
+            // out.push_str(&format!("\n20 部不同电影达标：{} / {} 名有效用户；未达标 {} 名。\n",
+            //     cohort["qualified_users"].as_u64().unwrap_or(0), cohort["evaluable_users"].as_u64().unwrap_or(0),
+            //     cohort["under_threshold_users"].as_u64().unwrap_or(0)));
         }, _ => {},
     }
     out
@@ -131,7 +149,7 @@ pub fn generate(state: &AppState, conversation_id: &str, run_id: &str) -> Result
     if jobs.is_empty() { return Ok(None); }
     let report = crate::store::create_job(state, conversation_id, "report", None, Some(run_id.into()))?;
     let mut body = format!("# MovieLens 数据治理报告\n\n生成时间：{}。\n\n本报告自动汇总本轮工具调用涉及的已完成任务结果。\n", crate::model::now());
-    for job in &jobs { body.push_str(&section(job)); }
+    for job in &jobs { body.push_str(&section(job, &db.jobs)); }
     body.push_str("\n---\n\n评分使用任务记录的规则方案；清洗数据文件和本报告可在本轮消息下方下载。\n");
     let dir = state.root.join("jobs").join(&report.id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -147,6 +165,18 @@ pub fn generate(state: &AppState, conversation_id: &str, run_id: &str) -> Result
 mod tests {
     use super::*;
     use crate::model::{Conversation, Message};
+    #[test]
+    fn comparison_times_fall_back_to_linked_assessments() {
+        let before = Job { id: "before".into(), kind: "assessment".into(),
+            result: Some(serde_json::json!({"metrics":{"t1":1000000000,"t2":1000000100}})),
+            ..Job::default() };
+        let after = Job { id: "after".into(), kind: "assessment".into(),
+            result: Some(serde_json::json!({"metrics":{"t1":1000000200,"t2":1000000300}})),
+            ..Job::default() };
+        let result = serde_json::json!({"before_job_id":"before","after_job_id":"after"});
+        assert_eq!(comparison_boundary(&result, &[before, after], "before", "t1"), Some(1000000000));
+        assert_eq!(format_utc_timestamp(Some(1000000000)), "2001-09-09 01:46:40 UTC（Unix 秒 1000000000）");
+    }
     #[test]
     fn referenced_pipeline_expands_completed_children() {
         let mut db = Database::default();

@@ -3,6 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Conversation, Job, Message, RuleSpec } from "../lib/types";
+import { formatUtcTimestamp } from "../lib/time";
 import { JobCard } from "./JobCard";
 export function MarkdownView({ content }: { content: string }) {
   return (
@@ -139,6 +140,7 @@ export function ChatTimeline({
             <JobCard
               key={i}
               job={job}
+              jobs={jobs}
               catalog={catalog}
               onScoreRules={() => onScoreRules(job)}
               onRecords={onRecords}
@@ -160,10 +162,18 @@ export function ChatTimeline({
               } as Record<string, string>
             )[job.status] || job.status;
           return (
-            <div key={i} className="tool-line">
-              <span>◇</span> {m.content || "五维评估"}五维评估 #
-              {job.display_number || job.id.slice(0, 8)} · {state}
-              {job.status === "running" ? `：${job.stage}` : ""}
+            <div key={i} className="tool-line assessment-status">
+              <span>◇</span>
+              <span>{m.content ? `${m.content} · ` : ""}五维评估 #
+                {job.display_number || job.id.slice(0, 8)} · {state}
+                {job.status === "running" ? `：${job.stage}` : ""}
+              </span>
+              {/* {job.status === "completed" && (
+                <div className="assessment-times">
+                  <span>T1：{formatUtcTimestamp(job.result?.metrics?.t1)}</span>
+                  <span>T2：{formatUtcTimestamp(job.result?.metrics?.t2)}</span>
+                </div>
+              )} */}
             </div>
           );
         }

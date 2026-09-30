@@ -13,9 +13,9 @@ fn tools() -> Value { json!([
     {"type":"function","function":{"name":"list_rules","description":"查看具体规则、开关、参数与分类。前端只显示调用记录，不显示返回的规则目录；需要向用户说明相关规则的中文名称、内容和状态。","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"update_rule","description":"调整当前对话中的单条清洗或评分规则，基础解析规则不能关闭。调用成功后，前端会显示被修改规则的名称、内容、开关和参数；用户点击该记录可打开对应规则设置。无需逐字复述修改记录。","parameters":{"type":"object","properties":{"rule_id":{"type":"string"},"enabled":{"type":"boolean"},"integer_value":{"type":"integer"},"range_min":{"type":"integer"},"range_max":{"type":"integer"}},"required":["rule_id"]}}},
     {"type":"function","function":{"name":"run_cleaning","description":"仅清洗共享数据。前端会显示任务状态和进度；完成后显示原始、保留、移除、规范化数量及规则触发排行，用户可按规则、表和动作筛选具体清洗记录。清洗数据和动作记录在本轮下方提供下载，本轮结束时自动生成包含清洗结果的可阅读、可下载 Markdown 报告。无需复述卡片数字，主要解释原因与局限。","parameters":{"type":"object","properties":{}}}},
-    {"type":"function","function":{"name":"assess_quality","description":"对原始数据或指定清洗任务产物单独计算五维质量、评估覆盖率及每位用户至少评价 20 部不同电影的达标率；低于 20 不删除用户。前端只显示评估任务的进度和状态，不显示五维分数卡片，也不把单独评估写入自动报告；需要在回复中讲述五维结果及必要数值。","parameters":{"type":"object","properties":{"source":{"type":"string","enum":["raw","cleaned"]},"cleaning_job_id":{"type":"string"}},"required":["source"]}}},
-    {"type":"function","function":{"name":"compare_assessments","description":"对比两次已完成的五维评估，要求评分规范与历史时间窗口一致。前端会显示任务状态、五维清洗前后分数、评估覆盖率、有效留存率、20 部不同电影达标率及变化，并可查看数学公式与评分规则；本轮结束时自动生成可阅读、可下载 Markdown 报告。无需逐项复述已展示的数值，主要解释变化。","parameters":{"type":"object","properties":{"before_job_id":{"type":"string"},"after_job_id":{"type":"string"}},"required":["before_job_id","after_job_id"]}}},
-    {"type":"function","function":{"name":"run_pipeline","description":"标准入口，顺序执行数据清洗、原始与清洗后五维评估、五维对比。前端按顺序显示清洗卡片、两次评估的进度状态和五维对比卡片；清洗卡片有数量、规则触发排行和可筛选的具体记录，对比卡片有五维分数、覆盖率、有效留存、20 部不同电影达标率、变化及公式化评分规则入口。低于 20 部电影的用户不会被删除。清洗文件在本轮下方可下载，本轮结束时自动生成可阅读、可下载的清洗与对比报告。无需重复卡片数据，主要解释结果。","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"assess_quality","description":"对原始数据或指定清洗任务产物单独计算五维质量、评估覆盖率、T1/T2 时间切分点及每位用户至少评价 20 部不同电影的达标率；低于 20 不删除用户。前端显示评估任务进度、状态和完成后的 T1/T2（UTC 与 Unix 秒），不显示五维分数卡片，也不把单独评估写入自动报告；需要在回复中讲述五维结果，T1/T2 已展示，无需重复，除非用户询问。","parameters":{"type":"object","properties":{"source":{"type":"string","enum":["raw","cleaned"]},"cleaning_job_id":{"type":"string"}},"required":["source"]}}},
+    {"type":"function","function":{"name":"compare_assessments","description":"对比两次已完成的五维评估，要求评分规范与历史时间窗口一致。前端会显示任务状态、五维清洗前后分数、评估覆盖率、有效留存率、20 部不同电影达标率及变化，以及两次评估各自的 T1/T2（UTC 与 Unix 秒）；可查看数学公式与评分规则。本轮结束时自动生成可阅读、可下载 Markdown 报告。无需逐项复述已展示的数值，主要解释变化。","parameters":{"type":"object","properties":{"before_job_id":{"type":"string"},"after_job_id":{"type":"string"}},"required":["before_job_id","after_job_id"]}}},
+    {"type":"function","function":{"name":"run_pipeline","description":"标准入口，顺序执行数据清洗、原始与清洗后五维评估、五维对比。前端按顺序显示清洗卡片、两次评估的进度状态与各自的 T1/T2，以及五维对比卡片；清洗卡片有数量、规则触发排行和可筛选的具体记录，对比卡片有五维分数、覆盖率、有效留存、20 部不同电影达标率、变化、两组 T1/T2 及公式化评分规则入口。低于 20 部电影的用户不会被删除。清洗文件在本轮下方可下载，本轮结束时自动生成可阅读、可下载的清洗与对比报告。无需重复卡片数据，主要解释结果。","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"get_cleaning_records","description":"按规则、表、动作等条件分页查看某次清洗的具体动作记录，不一次返回全部记录。前端只显示查询调用记录，不展示本次返回的记录；需要在回复中概述所查记录及其来源表和触发规则。读取历史记录不会生成报告。","parameters":{"type":"object","properties":{"job_id":{"type":"string"},"rule_id":{"type":"string"},"table":{"type":"string","enum":["0","1","2"]},"action":{"type":"string","enum":["removed","normalized"]},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":200}},"required":["job_id"]}}},
     {"type":"function","function":{"name":"get_rule_statistics","description":"一次读取某次清洗的全部规则触发次数排行，包含中文规则名和具体规则内容；未指定 job_id 时读取本对话最近完成的清洗任务。询问哪条规则触发最多时优先直接调用此工具，不要逐条查询清洗记录。前端只显示调用记录，不展示排行；需要在回复中说明规则名称、判定内容和次数。读取统计不会生成报告。","parameters":{"type":"object","properties":{"job_id":{"type":"string"}}}}},
     {"type":"function","function":{"name":"list_jobs","description":"列出当前对话的历史任务 ID、类型和状态，供结果追问。前端只显示调用记录，不展示返回的任务列表；需要在回复中说明相关任务。读取历史任务不会生成报告。","parameters":{"type":"object","properties":{}}}},
@@ -67,9 +67,11 @@ fn concise_job(job: &Job) -> Value {
             "assessment" => {
                 json!({"dimensions":v["metrics"]["dimensions"],"cohort20":v["metrics"]["cohort20"],
                     "score_spec_version":v["score_spec_version"],"time_window":v["metrics"]["time_window"],
+                    "t1":v["metrics"]["t1"],"t2":v["metrics"]["t2"],
                     "rule_version":v["rule_version_label"]})
             },
-            "comparison" => json!({"dimensions":v["dimensions"],"rule_version":v["rule_version_label"]}),
+            "comparison" => json!({"dimensions":v["dimensions"],"time_boundaries":v["time_boundaries"],
+                "rule_version":v["rule_version_label"]}),
             _ => v.clone() })})
 }
 async fn create_and_run<F>(app: &AppHandle, state: Arc<AppState>, conversation_id: &str,
@@ -192,7 +194,9 @@ async fn execute_tool(app: &AppHandle, state: Arc<AppState>, conversation_id: &s
                     if compared.status != "completed" { return Err(compared.error.unwrap_or("对比失败".into())); }
                     let summary = json!({"score_spec_version":"quality-spec-v2","cleaning_job_id":clean.id,"before_job_id":before.id,"after_job_id":after.id,"comparison_job_id":compared.id});
                     state.update_job(app, &parent.id, "completed", "完成", None, Some(summary.clone()))?;
-                    Ok(json!({"pipeline_job_id":parent.id,"steps":summary,"comparison":compared.result.as_ref().map(|v| &v["dimensions"])}))
+                    Ok(json!({"pipeline_job_id":parent.id,"steps":summary,
+                        "comparison":compared.result.as_ref().map(|v| &v["dimensions"]),
+                        "time_boundaries":compared.result.as_ref().map(|v| &v["time_boundaries"])}))
                 }.await;
                 if let Err(error) = &outcome {
                     let status = if cancel.load(Ordering::SeqCst) { "cancelled" } else { "failed" };
@@ -381,13 +385,15 @@ MovieLens 1M，简称 `ml-1m`，由明尼苏达大学 GroupLens Research 发布�
 
 官方 MovieLens 1M 的用户标识已经匿名化，入选用户至少评价过 20 部电影；当前上传数据可能含异常，必须以工具评估结果为准。`users.dat` 中的人口属性由用户自愿填写，GroupLens 未核验其准确性；年龄和职业使用类别编码。电影类型使用竖线分隔，一部电影可以属于多个类型。MovieID 的最大值不代表实际电影数量，因为编号并不连续。
 
-你可以使用多种工具对 MovieLens 1M 进行清理和诊断。根据用户要求调用工具，解释结果的原因、局限和建议。每个工具的 description 已说明前端会展示什么：已展示的内容无需逐项复述，未展示的查询结果需要在回复中讲述。
+你可以使用多种工具对 MovieLens 1M 进行清理和诊断。根据用户要求调用工具，解释结果的原因、局限和建议。每个工具的 description 已说明前端会展示什么：已展示的内容不要重复复述，未展示的查询结果需要在回复中讲述。
 - 普通清洗比较需求优先调用 run_pipeline；用户只要清洗、单独五维评估或指定两次评估对比时调用对应工具。
 - 需要更改规则时调用 update_rule，可先 list_rules；询问规则触发次数排行时直接调用 get_rule_statistics。向用户说明规则时使用中文名称和具体判定内容，不要只写规则 ID。单条记录可能触发多条规则。
 - 普通查看历史任务、统计或记录无需请求报告；只有用户明确要求基于历史结果新建报告时才调用 request_report。
 不要向用户输出 SHA 哈希或内部版本指纹，只使用工具给出的易读版本名。
 支持 GFM Markdown：标题、列表、表格、代码、链接；不支持原始 HTML。
-不要编造 Hadoop 结果。准确性只验证已知取值域，时效性按历史参照。规则: {rules_context}。已有任务：{job_context}。追问其他旧结果时可先调用 list_jobs 或 get_job。")})];
+不要编造 Hadoop 结果。准确性只验证已知取值域，时效性按历史参照。规则: {rules_context}。已有任务：{job_context}。
+追问其他旧结果时可先调用 list_jobs 或 get_job。
+请尽量输出简洁的信息。始终使用中文回答。")})];
     for m in conversation.messages.iter().filter(|m| m.kind == "text" && (m.role == "user" || m.role == "assistant")).rev().take(20).collect::<Vec<_>>().into_iter().rev() {
         messages.push(json!({"role":m.role,"content":m.content}));
     }

@@ -368,6 +368,19 @@ input[type="checkbox"] {
 .tool-line small {
   opacity: 0.7;
 }
+.assessment-status { flex-wrap: wrap; }
+.assessment-times {
+  display: grid;
+  gap: 3px;
+  flex-basis: 100%;
+  padding-left: 24px;
+  font-size: 12px;
+  color: #5b7185;
+}
+.time-boundaries { overflow-x: auto; }
+.time-boundaries > strong { font-size: 13px; }
+.time-boundaries table { min-width: 600px; }
+.time-boundaries small { display: block; color: #718598; font-size: 12px; }
 .job-card,
 .report-card {
   margin: 20px 0 20px 46px;

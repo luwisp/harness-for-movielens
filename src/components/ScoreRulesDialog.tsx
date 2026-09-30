@@ -53,6 +53,8 @@ export function ScoreRulesDialog({ job, onClose }: { job: Job; onClose: () => vo
           <code>Y₍d₎ = Σₜ Y₍d,t₎ / 适用且原始有记录的表数</code>
           <p>G：合格行数；E：可评估行数；N：实际行数；Q：质量分；A：评估覆盖率；Y：有效留存率。三表等权，时间维度只适用于 ratings。五维之间不再加权成一个总分。</p>
           <code>C₂₀ = 100 × #{'{'}u ∣ nᵤ ≥ 20{'}'} / 有效且唯一的用户数</code>
+          <code>T1 = s⌊0.70(n−1)⌋，T2 = s⌊0.85(n−1)⌋</code>
+          <p>s 是结构完整、时间戳在历史窗口内的 ratings 行按时间升序排列后的 Unix 秒；n 为这些行的数量。T1/T2 分别从每次评估数据计算。</p>
         </div>
         <div className="score-rule-list">
           {dimensions.map((dimension) => (

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Job, RuleSpec } from "../lib/types";
+import { formatUtcTimestamp } from "../lib/time";
 const labels: Record<string, string> = {
   accurate: "准确性",
   complete: "完整性",
@@ -23,11 +24,13 @@ const total = (v: any) =>
   Object.values(v || {}).reduce<number>((a, b) => a + (Number(b) || 0), 0);
 export function JobCard({
   job,
+  jobs,
   catalog,
   onScoreRules,
   onRecords,
 }: {
   job: Job;
+  jobs: Job[];
   catalog: RuleSpec[];
   onScoreRules: () => void;
   onRecords: (j: Job) => void;
@@ -35,6 +38,12 @@ export function JobCard({
   const [expanded, setExpanded] = useState(false);
   const r = job.result;
   const m = r?.metrics;
+  const beforeAssessment = jobs.find((candidate) => candidate.id === r?.before_job_id);
+  const afterAssessment = jobs.find((candidate) => candidate.id === r?.after_job_id);
+  const timeBoundaries = r?.time_boundaries || {
+    before: { t1: beforeAssessment?.result?.metrics?.t1, t2: beforeAssessment?.result?.metrics?.t2 },
+    after: { t1: afterAssessment?.result?.metrics?.t1, t2: afterAssessment?.result?.metrics?.t2 },
+  };
   const ruleCounts = Object.entries(m?.counts?.by_rule || {}).sort(
     (a, b) => Number(b[1]) - Number(a[1]),
   );
@@ -156,13 +165,31 @@ export function JobCard({
               })}
             </tbody>
           </table>
+          <div className="time-boundaries">
+            <strong>T1 / T2 时间切分点</strong>
+            <table>
+              <thead><tr><th>切分点</th><th>对比前评估</th><th>对比后评估</th></tr></thead>
+              <tbody>
+                {(["t1", "t2"] as const).map((name) => (
+                  <tr key={name}>
+                    <td>{name.toUpperCase()}</td>
+                    <td>{formatUtcTimestamp(timeBoundaries.before?.[name])}</td>
+                    <td>{formatUtcTimestamp(timeBoundaries.after?.[name])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {/* <small>两侧分别按各自评估数据计算；目前仅供参考，未用于建模划分。</small> */}
+          </div>
           {r.cohort20_after && (
-            <p className="muted">
+            <>
+            {/* <p className="muted">
               ≥20 部不同电影：{r.cohort20_after.qualified_users} / {r.cohort20_after.evaluable_users} 名有效用户
               （{number(r.cohort20_after.rate)}）；未达标用户仍保留。
-            </p>
+            </p> */}
+            </>
           )}
-          <details>
+          {/* <details>
             <summary>查看各表分子、分母与有效留存</summary>
             <div className="table-scroll">
             <table>
@@ -182,7 +209,7 @@ export function JobCard({
               </tbody>
             </table>
             </div>
-          </details>
+          </details> */}
         </>
       )}
     </div>
