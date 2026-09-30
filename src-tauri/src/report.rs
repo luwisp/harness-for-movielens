@@ -3,6 +3,20 @@ use serde_json::Value;
 use std::{collections::HashSet, fs};
 
 fn count(value: &Value) -> u64 { value.as_object().map(|m| m.values().filter_map(Value::as_u64).sum()).unwrap_or(0) }
+fn score_check_label(id: &str) -> &str {
+    match id {
+        "schema_fields" => "字段数", "required_values" => "必填为空",
+        "user_id_range" => "用户 ID 范围", "user_gender_domain" => "性别类别",
+        "user_age_domain" => "年龄类别", "user_occupation_range" => "职业编码",
+        "movie_id_range" => "电影 ID 范围", "movie_genre_domain" => "电影类型目录",
+        "rating_user_id_range" => "评分用户 ID 范围", "rating_movie_id_range" => "评分电影 ID 范围",
+        "rating_integer_1_5" => "评分须为 1–5 整数", "timestamp_integer" => "规范 Unix 秒",
+        "historical_window" => "历史时间窗口", "duplicate_key" => "业务键重复",
+        "attribute_conflict" => "同 ID 属性冲突", "event_rating_conflict" => "同事件评分冲突",
+        "invalid_user_reference" => "用户引用无效", "invalid_movie_reference" => "电影引用无效",
+        "cohort20_or_invalid_user" => "未达 20 部或用户无效", _ => id,
+    }
+}
 pub fn humanize_legacy_report(body: &str) -> String {
     let mut output = String::new();
     let mut remaining = body;
@@ -55,24 +69,28 @@ fn section(job: &Job) -> String {
                 result["before_label"].as_str().unwrap_or("前一次五维评估"),
                 result["after_label"].as_str().unwrap_or("后一次五维评估")));
             out.push_str("`Q[d,t] = 100 × G[d,t] / E[d,t]`；`A[d,t] = 100 × E[d,t] / N[t]`；`Y[d,t] = 100 × G[d,t,清洗后] / N[t,原始]`。G 为合格行数，E 为可评估行数，N 为实际行数；三表等权平均，时间维度只适用 ratings。无分母时记 N/A。\n\n");
-            out.push_str("`n[u] = |{MovieID : 用户 u 的可信评分引用有效电影}|`；`C20 = 100 × #{u : n[u] ≥ 20} / 有效且唯一的用户数`。低于 20 部的用户不会因此被清洗删除。\n\n");
+            out.push_str("`n[u] = |{MovieID : 用户 u 的可信评分引用唯一有效电影}|`；`C20 = 100 × #{u : n[u] ≥ 20} / 有效且唯一的用户数`。可信评分须为 1–5 规范整数、处于历史时间窗口且事件无冲突。低于 20 部的用户不会因此被清洗删除。\n\n");
             out.push_str("| 维度 | 清洗前 Q（%） | 清洗后 Q（%） | 变化（百分点） | 清洗后 A（%） | 有效留存 Y（%） |\n|---|---:|---:|---:|---:|---:|\n");
             for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
                 let v = &result["dimensions"][id];
                 let fmt = |x: &Value| x.as_f64().map(|n| format!("{n:.2}")).unwrap_or("N/A".into());
                 out.push_str(&format!("| {label} | {} | {} | {} | {} | {} |\n", fmt(&v["before"]), fmt(&v["after"]), fmt(&v["change_pp"]), fmt(&v["coverage_after"]), fmt(&v["yield"])));
             }
-            out.push_str("\n| 维度 | 数据表 | 清洗前 G/E | 清洗后 G/E | 原始行数 | 有效留存 Y（%） |\n|---|---|---:|---:|---:|---:|\n");
+            out.push_str("\n| 维度 | 数据表 | 清洗前 G/E | 清洗后 G/E | 原始行数 | 有效留存 Y（%） | 清洗后未通过的检查 |\n|---|---|---:|---:|---:|---:|---|\n");
             for (id,label) in [("accurate","准确性"),("complete","完整性"),("unique","唯一性"),("consistent","一致性"),("up_to_date","时效性")] {
                 for (kind,table) in [("0","users"),("1","movies"),("2","ratings")] {
                     let v = &result["dimensions"][id]["tables"][kind];
                     if v.is_null() { continue; }
                     let n = |x: &Value| x.as_u64().unwrap_or(0);
-                    out.push_str(&format!("| {label} | {table} | {}/{} | {}/{} | {} | {} |\n",
+                    let failures = v["after"]["failed_checks"].as_object().map(|checks| checks.iter()
+                        .filter(|(_, n)| n.as_u64().unwrap_or(0) > 0)
+                        .map(|(id, n)| format!("{} {}", score_check_label(id), n.as_u64().unwrap_or(0)))
+                        .collect::<Vec<_>>().join("；")).filter(|s| !s.is_empty()).unwrap_or_else(|| "无".into());
+                    out.push_str(&format!("| {label} | {table} | {}/{} | {}/{} | {} | {} | {} |\n",
                         n(&v["before"]["good"]), n(&v["before"]["eligible"]),
                         n(&v["after"]["good"]), n(&v["after"]["eligible"]),
                         n(&v["before"]["total"]),
-                        v["yield"].as_f64().map(|x| format!("{x:.2}")).unwrap_or("N/A".into())));
+                        v["yield"].as_f64().map(|x| format!("{x:.2}")).unwrap_or("N/A".into()), failures));
                 }
             }
             let cohort = &result["cohort20_after"];
@@ -102,7 +120,8 @@ fn selected_jobs<'a>(db: &'a Database, conversation_id: &str, run_id: &str) -> R
     }
     let jobs: Vec<_> = db.jobs.iter().filter(|j| j.conversation_id == conversation_id &&
         selected.contains(&j.id) && j.status == "completed" &&
-        ["cleaning", "comparison"].contains(&j.kind.as_str())).collect();
+        (j.kind == "cleaning" || (j.kind == "comparison" &&
+            j.result.as_ref().is_some_and(|v| v["score_spec_version"] == "quality-spec-v2")))).collect();
     Ok(jobs)
 }
 

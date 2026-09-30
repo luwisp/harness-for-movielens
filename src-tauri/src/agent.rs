@@ -190,7 +190,7 @@ async fn execute_tool(app: &AppHandle, state: Arc<AppState>, conversation_id: &s
                     state.update_job(app, &parent.id, "running", "五维评估对比", None, None)?;
                     let compared = comparison(app, state.clone(), conversation_id, run_id, &before.id, &after.id, Some(parent.id.clone())).await?;
                     if compared.status != "completed" { return Err(compared.error.unwrap_or("对比失败".into())); }
-                    let summary = json!({"cleaning_job_id":clean.id,"before_job_id":before.id,"after_job_id":after.id,"comparison_job_id":compared.id});
+                    let summary = json!({"score_spec_version":"quality-spec-v2","cleaning_job_id":clean.id,"before_job_id":before.id,"after_job_id":after.id,"comparison_job_id":compared.id});
                     state.update_job(app, &parent.id, "completed", "完成", None, Some(summary.clone()))?;
                     Ok(json!({"pipeline_job_id":parent.id,"steps":summary,"comparison":compared.result.as_ref().map(|v| &v["dimensions"])}))
                 }.await;

@@ -133,6 +133,8 @@ export function ChatTimeline({
         }
         if (m.kind === "job" && m.job_id) {
           const job = byId.get(m.job_id);
+          if (job?.kind === "comparison" && job.status === "completed" &&
+            job.result?.score_spec_version !== "quality-spec-v2") return null;
           return job && ["cleaning", "comparison"].includes(job.kind) ? (
             <JobCard
               key={i}
@@ -146,6 +148,7 @@ export function ChatTimeline({
         if (m.kind === "assessment_status" && m.job_id) {
           const job = byId.get(m.job_id);
           if (!job) return null;
+          if (job.status === "completed" && job.result?.score_spec_version !== "quality-spec-v2") return null;
           const state =
             (
               {

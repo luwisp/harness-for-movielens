@@ -102,6 +102,7 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(result["cohort20"]["qualified_users"], 1)
         self.assertEqual(result["cohort20"]["evaluable_users"], 2)
         self.assertEqual(result["dimensions"]["complete"]["tables"]["0"]["good"], 1)
+        self.assertEqual(result["dimensions"]["complete"]["tables"]["0"]["failed_checks"]["cohort20_or_invalid_user"], 1)
         cleaned = self.run_clean(config, sample)
         kept_users = [value["line"] for tag, value in cleaned if tag == "C" and value["table"] == "0"]
         self.assertEqual(len(kept_users), 2)
@@ -128,6 +129,7 @@ class GovernanceTests(unittest.TestCase):
         result = self.run_assess(self.config(), sample)
         time = result["dimensions"]["up_to_date"]["tables"]["2"]
         self.assertEqual((time["good"], time["eligible"]), (1, 3))
+        self.assertEqual(time["failed_checks"]["historical_window"], 2)
 
 
 if __name__ == "__main__":

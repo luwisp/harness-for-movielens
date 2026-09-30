@@ -331,6 +331,8 @@ input[type="checkbox"] {
   font-size: 13px;
   margin: 15px 0;
 }
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 740px; }
 .markdown th,
 .markdown td,
 .job-card th,

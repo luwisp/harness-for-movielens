@@ -8,8 +8,8 @@ const dimensions = [
   },
   {
     id: "complete", name: "完整性", tables: "users、movies、ratings",
-    formula: "G₍完整,users₎ = 结构完整且 nᵤ ≥ 20 的用户行数",
-    detail: "三表分别有 5、3、4 个字段且均非空白；users 还要求每名有效用户至少评价 20 部不同电影。nᵤ = |{ MovieID ∣ 用户 u 的可信评分引用有效电影 }|。未达标用户仅影响完整性分数，不因这项指标被清洗删除。未观察到的用户－电影组合不算缺失。",
+    formula: "G₍完整,users₎ = 结构完整、用户唯一有效且 nᵤ ≥ 20 的用户行数",
+    detail: "三表分别有 5、3、4 个字段且均非空白；users 还要求每名唯一有效用户至少评价 20 部不同电影。nᵤ = |{ MovieID ∣ 用户 u 的可信评分引用唯一有效电影 }|。可信评分须为 1–5 规范整数、处于历史时间窗口、同一事件无冲突。未达标用户仅影响完整性分数，不因这项指标被清洗删除。未观察到的用户－电影组合不算缺失。",
   },
   {
     id: "unique", name: "唯一性", tables: "users、movies、ratings",
@@ -49,6 +49,8 @@ export function ScoreRulesDialog({ job, onClose }: { job: Job; onClose: () => vo
           <code>A₍d,t₎ = 100 × E₍d,t₎ / Nₜ</code>
           <code>Y₍d,t₎ = 100 × G₍d,t,清洗后₎ / N₍t,原始₎</code>
           <code>Q₍d₎ = Σₜ Q₍d,t₎ / 适用且可评估的表数</code>
+          <code>A₍d₎ = Σₜ A₍d,t₎ / 适用且有记录的表数</code>
+          <code>Y₍d₎ = Σₜ Y₍d,t₎ / 适用且原始有记录的表数</code>
           <p>G：合格行数；E：可评估行数；N：实际行数；Q：质量分；A：评估覆盖率；Y：有效留存率。三表等权，时间维度只适用于 ratings。五维之间不再加权成一个总分。</p>
           <code>C₂₀ = 100 × #{'{'}u ∣ nᵤ ≥ 20{'}'} / 有效且唯一的用户数</code>
         </div>

@@ -36,21 +36,39 @@ fn migrate_legacy_rules(state: &mut serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+fn reset_previous_conversations(db: &mut Database) -> Vec<String> {
+    let job_ids = db.jobs.iter().map(|job| job.id.clone()).collect();
+    db.conversations.clear();
+    db.jobs.clear();
+    job_ids
+}
+
 impl AppState {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
         let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
         fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-        let mut db: Database = match fs::read(root.join("state.json")) {
+        let (mut db, had_state): (Database, bool) = match fs::read(root.join("state.json")) {
             Ok(bytes) => {
                 let mut value: serde_json::Value = serde_json::from_slice(&bytes)
                     .map_err(|e| format!("读取状态失败: {e}"))?;
                 migrate_legacy_rules(&mut value)?;
-                serde_json::from_value(value).map_err(|e| format!("读取状态失败: {e}"))?
+                (serde_json::from_value(value).map_err(|e| format!("读取状态失败: {e}"))?, true)
             },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Database::default(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Database::default(), false),
             Err(e) => return Err(e.to_string()),
         };
         rules::normalize(&mut db.settings.rules);
+        let marker = root.join("quality-v2-conversations-reset");
+        let reset = had_state && !marker.exists();
+        if reset {
+            let job_ids = reset_previous_conversations(&mut db);
+            for id in job_ids {
+                if uuid::Uuid::parse_str(&id).is_ok() {
+                    let dir = root.join("jobs").join(&id);
+                    if dir.exists() { fs::remove_dir_all(&dir).map_err(|e| format!("删除旧任务目录失败: {e}"))?; }
+                }
+            }
+        }
         for name in ["users.dat", "movies.dat", "ratings.dat"] {
             if !db.active_files.contains_key(name) {
                 if let Some(file) = db.files.iter().rev().find(|f| f.name == name && f.hdfs_path.is_some()) {
@@ -66,7 +84,10 @@ impl AppState {
                 job.error = Some("应用退出时任务未完成；请重新发起任务".into()); job.updated_at = now();
             }
         }
-        Ok(Self { root, db: Mutex::new(db), runs: Mutex::new(Default::default()), uploads: Mutex::new(Default::default()), source_busy: AtomicBool::new(false) })
+        let state = Self { root, db: Mutex::new(db), runs: Mutex::new(Default::default()), uploads: Mutex::new(Default::default()), source_busy: AtomicBool::new(false) };
+        if reset { state.change(|_| Ok(()))?; }
+        if !marker.exists() { fs::write(marker, b"done").map_err(|e| format!("记录对话迁移状态失败: {e}"))?; }
+        Ok(state)
     }
 
     pub fn change<T>(&self, f: impl FnOnce(&mut Database) -> Result<T, String>) -> Result<T, String> {
@@ -317,6 +338,25 @@ pub fn active_files(db: &Database) -> Result<Vec<UploadedFile>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reset_discards_all_previous_conversations_and_jobs_but_keeps_sources() {
+        let mut db = Database::default();
+        db.settings.model = "deepseek-chat".into();
+        db.files.push(UploadedFile { id: "source".into(), conversation_id: String::new(),
+            name: "users.dat".into(), sha256: String::new(), bytes: 1,
+            local_path: String::new(), hdfs_path: Some("/sources/users.dat".into()), uploaded_at: now() });
+        db.active_files.insert("users.dat".into(), "source".into());
+        db.conversations.push(Conversation { id: "old-chat".into(), ..Conversation::default() });
+        db.jobs.push(Job { id: "clean".into(), kind: "cleaning".into(), ..Job::default() });
+        db.jobs.push(Job { id: "score".into(), kind: "assessment".into(), ..Job::default() });
+        let discarded = reset_previous_conversations(&mut db);
+        assert_eq!(discarded.len(), 2);
+        assert!(db.conversations.is_empty());
+        assert!(db.jobs.is_empty());
+        assert_eq!(db.files.len(), 1);
+        assert_eq!(db.active_files["users.dat"], "source");
+        assert_eq!(db.settings.model, "deepseek-chat");
+    }
     #[test]
     fn old_settings_rules_keep_user_choices() {
         let mut value = serde_json::json!({"settings":{"rules":{

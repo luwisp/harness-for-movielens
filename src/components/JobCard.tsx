@@ -7,6 +7,17 @@ const labels: Record<string, string> = {
   consistent: "一致性",
   up_to_date: "时效性",
 };
+const checkLabels: Record<string, string> = {
+  schema_fields: "字段数", required_values: "必填为空", user_id_range: "用户 ID 范围",
+  user_gender_domain: "性别类别", user_age_domain: "年龄类别", user_occupation_range: "职业编码",
+  movie_id_range: "电影 ID 范围", movie_genre_domain: "电影类型目录",
+  rating_user_id_range: "评分用户 ID 范围", rating_movie_id_range: "评分电影 ID 范围",
+  rating_integer_1_5: "评分须为 1–5 整数", timestamp_integer: "规范 Unix 秒",
+  historical_window: "历史时间窗口", duplicate_key: "业务键重复",
+  attribute_conflict: "同 ID 属性冲突", event_rating_conflict: "同事件评分冲突",
+  invalid_user_reference: "用户引用无效", invalid_movie_reference: "电影引用无效",
+  cohort20_or_invalid_user: "未达 20 部或用户无效",
+};
 const number = (v: unknown) => (typeof v === "number" ? `${v.toFixed(2)}%` : "N/A");
 const total = (v: any) =>
   Object.values(v || {}).reduce<number>((a, b) => a + (Number(b) || 0), 0);
@@ -153,8 +164,9 @@ export function JobCard({
           )}
           <details>
             <summary>查看各表分子、分母与有效留存</summary>
+            <div className="table-scroll">
             <table>
-              <thead><tr><th>维度</th><th>表</th><th>清洗前 G/E</th><th>清洗后 G/E</th><th>原始行数</th><th>有效留存</th></tr></thead>
+              <thead><tr><th>维度</th><th>表</th><th>清洗前 G/E</th><th>清洗后 G/E</th><th>原始行数</th><th>有效留存</th><th>清洗后未通过的检查</th></tr></thead>
               <tbody>
                 {Object.entries(labels).flatMap(([id, label]) =>
                   Object.entries(r.dimensions?.[id]?.tables || {}).map(([table, stats]: [string, any]) => (
@@ -163,10 +175,13 @@ export function JobCard({
                       <td>{stats.before?.good} / {stats.before?.eligible}</td>
                       <td>{stats.after?.good} / {stats.after?.eligible}</td>
                       <td>{stats.before?.total}</td><td>{number(stats.yield)}</td>
+                      <td>{Object.entries(stats.after?.failed_checks || {}).filter(([, n]) => Number(n) > 0)
+                        .map(([check, n]) => `${checkLabels[check] || check} ${n}`).join("；") || "无"}</td>
                     </tr>
                   ))) }
               </tbody>
             </table>
+            </div>
           </details>
         </>
       )}

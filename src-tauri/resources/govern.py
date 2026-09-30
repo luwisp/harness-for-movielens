@@ -175,6 +175,7 @@ def clean(config):
 def assess(config):
     dimensions = ("accurate", "complete", "unique", "consistent", "up_to_date")
     tables = {name: {kind: Counter() for kind in FIELDS} for name in dimensions}
+    failed_checks = {name: {kind: Counter() for kind in FIELDS} for name in dimensions}
     counts = Counter()
     groups = {"0": {}, "1": {}, "2": {}}
     cohort_rows = Counter()
@@ -198,31 +199,46 @@ def assess(config):
         basic = len(parts) == FIELDS[kind] and all(parts)
         add("complete", kind, True, basic and kind != "0")
         if not basic:
+            failed_checks["complete"][kind]["schema_fields" if len(parts) != FIELDS[kind] else "required_values"] += 1
             continue
         uid = integer(parts[0])
         if kind == "0":
             occupation = integer(parts[3])
-            accurate = (valid_id(parts[0], (1, 6040)) and parts[1] in {"F", "M"}
-                        and parts[2] in AGES and occupation is not None and 0 <= occupation <= 20)
+            checks = {"user_id_range": valid_id(parts[0], (1, 6040)),
+                      "user_gender_domain": parts[1] in {"F", "M"},
+                      "user_age_domain": parts[2] in AGES,
+                      "user_occupation_range": occupation is not None and 0 <= occupation <= 20}
             item_key = uid if uid is not None and uid > 0 else None
             if item_key is not None:
                 cohort_rows[item_key] += 1
         elif kind == "1":
             genres = parts[2].split("|")
-            accurate = valid_id(parts[0], (1, 3952)) and all(x in GENRES for x in genres)
+            checks = {"movie_id_range": valid_id(parts[0], (1, 3952)),
+                      "movie_genre_domain": all(x in GENRES for x in genres)}
             item_key = uid if uid is not None and uid > 0 else None
         else:
             movie_id, rating, stamp = (integer(x) for x in parts[1:])
-            accurate = (valid_id(parts[0], (1, 6040)) and valid_id(parts[1], (1, 3952))
-                        and rating is not None and 1 <= rating <= 5)
+            checks = {"rating_user_id_range": valid_id(parts[0], (1, 6040)),
+                      "rating_movie_id_range": valid_id(parts[1], (1, 3952)),
+                      "rating_integer_1_5": rating is not None and 1 <= rating <= 5}
             item_key = (uid, movie_id, stamp) if (uid is not None and uid > 0 and
                         movie_id is not None and movie_id > 0 and stamp is not None) else None
             add("up_to_date", kind, True, stamp is not None and start <= stamp <= end)
+            if stamp is None:
+                failed_checks["up_to_date"][kind]["timestamp_integer"] += 1
+            elif not start <= stamp <= end:
+                failed_checks["up_to_date"][kind]["historical_window"] += 1
             if stamp is not None and start <= stamp <= end:
                 stamps.append(stamp)
+        accurate = all(checks.values())
+        for check, passed in checks.items():
+            if not passed:
+                failed_checks["accurate"][kind][check] += 1
         add("accurate", kind, True, accurate)
         if item_key is None:
             continue
+        if item_key in groups[kind]:
+            failed_checks["unique"][kind]["duplicate_key"] += 1
         add("unique", kind, True, item_key not in groups[kind])
         add("consistent", kind, True, False)
         signature = tuple(parts[1:]) if kind != "2" else rating
@@ -241,11 +257,22 @@ def assess(config):
             user_movies.setdefault(uid, set()).add(mid)
     for kind in ("0", "1"):
         tables["consistent"][kind]["good"] = sum(group[0] for group in groups[kind].values() if not group[2])
+        failed_checks["consistent"][kind]["attribute_conflict"] = sum(
+            group[0] for group in groups[kind].values() if group[2])
     tables["consistent"]["2"]["good"] = sum(
         group[0] for (uid, mid, _), group in groups["2"].items()
         if not group[2] and uid in valid_users and mid in valid_movies)
+    for (uid, mid, _), group in groups["2"].items():
+        if group[2]:
+            failed_checks["consistent"]["2"]["event_rating_conflict"] += group[0]
+        if uid not in valid_users:
+            failed_checks["consistent"]["2"]["invalid_user_reference"] += group[0]
+        if mid not in valid_movies:
+            failed_checks["consistent"]["2"]["invalid_movie_reference"] += group[0]
     qualified = {uid for uid in valid_users if len(user_movies.get(uid, ())) >= 20}
     tables["complete"]["0"]["good"] = sum(cohort_rows[uid] for uid in qualified)
+    failed_checks["complete"]["0"]["cohort20_or_invalid_user"] = sum(
+        count for uid, count in cohort_rows.items() if uid not in qualified)
     enabled_scores = {name: enabled(config, "score_" + name) for name in dimensions}
     result = {}
     for name in dimensions:
@@ -265,7 +292,8 @@ def assess(config):
                 coverages.append(coverage)
             by_table[kind] = {"good": good, "eligible": eligible, "total": total,
                               "bad": eligible - good, "unassessable": total - eligible,
-                              "score": value, "coverage": coverage}
+                              "score": value, "coverage": coverage,
+                              "failed_checks": dict(failed_checks[name][kind])}
         result[name] = {"score": sum(scores) / len(scores) if scores and enabled_scores[name] else None,
                         "coverage": sum(coverages) / len(coverages) if coverages else None,
                         "tables": by_table}
