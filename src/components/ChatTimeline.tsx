@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Conversation, Job, Message, RuleSpec } from "../lib/types";
-import { formatUtcTimestamp } from "../lib/time";
+import { AnalysisCard } from "../features/analysis/AnalysisCard";
 import { JobCard } from "./JobCard";
 export function MarkdownView({ content }: { content: string }) {
   return (
@@ -77,6 +77,8 @@ export function ChatTimeline({
         const names =
           job.kind === "cleaning"
             ? ["users.dat", "movies.dat", "ratings.dat", "actions.ndjson"]
+            : job.kind.startsWith("analysis_")
+              ? (job.result?.files || []) as string[]
             : job.kind === "report"
               ? ["report.md"]
               : [];
@@ -95,7 +97,7 @@ export function ChatTimeline({
               <small>
                 {job.kind === "report"
                   ? "Markdown 报告"
-                  : job.result?.clean_data_version_label || "历史清洗数据"}
+                  : job.result?.version || job.result?.clean_data_version_label || "历史清洗数据"}
               </small>
             </span>
             {job.kind === "cleaning" && (
@@ -134,6 +136,7 @@ export function ChatTimeline({
         }
         if (m.kind === "job" && m.job_id) {
           const job = byId.get(m.job_id);
+          if (job?.kind.startsWith("analysis_")) return <AnalysisCard key={i} job={job}/>;
           if (job?.kind === "comparison" && job.status === "completed" &&
             job.result?.score_spec_version !== "quality-spec-v2") return null;
           return job && ["cleaning", "comparison"].includes(job.kind) ? (
@@ -213,7 +216,7 @@ export function ChatTimeline({
               >
                 <span>▤</span>
                 <div>
-                  <strong>本轮数据治理报告</strong>
+                  <strong>本轮结果报告</strong>
                   <small>
                     点击{report?.job.id === job.id ? "收起" : "阅读"} Markdown
                     报告
@@ -224,7 +227,7 @@ export function ChatTimeline({
               {report?.job.id === job.id && (
                 <article className="inline-report">
                   <div className="inline-report-head">
-                    <strong>数据治理报告</strong>
+                    <strong>结果报告</strong>
                   </div>
                   <MarkdownView content={report.markdown} />
                 </article>

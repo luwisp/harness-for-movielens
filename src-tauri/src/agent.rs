@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter};
 #[derive(Default)]
 struct ToolCall { id: String, name: String, arguments: String }
 
-fn tools() -> Value { json!([
+fn tools() -> Value { let mut base=json!([
     {"type":"function","function":{"name":"list_sources","description":"查看设置中共享的三个 MovieLens 数据源及 HDFS 路径。前端只显示调用记录，不显示返回的文件清单；需要向用户说明查询结果。","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"list_rules","description":"查看具体规则、开关、参数与分类。前端只显示调用记录，不显示返回的规则目录；需要向用户说明相关规则的中文名称、内容和状态。","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"update_rule","description":"调整当前对话中的单条清洗或评分规则，基础解析规则不能关闭。调用成功后，前端会显示被修改规则的名称、内容、开关和参数；用户点击该记录可打开对应规则设置。无需逐字复述修改记录。","parameters":{"type":"object","properties":{"rule_id":{"type":"string"},"enabled":{"type":"boolean"},"integer_value":{"type":"integer"},"range_min":{"type":"integer"},"range_max":{"type":"integer"}},"required":["rule_id"]}}},
@@ -21,8 +21,8 @@ fn tools() -> Value { json!([
     {"type":"function","function":{"name":"list_jobs","description":"列出当前对话的历史任务 ID、类型和状态，供结果追问。前端只显示调用记录，不展示返回的任务列表；需要在回复中说明相关任务。读取历史任务不会生成报告。","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"get_job","description":"查询指定任务状态与结果摘要。前端只显示调用记录，不为历史任务重新显示结果卡片；需要在回复中讲述查询到的状态和相关结果。读取历史任务不会生成报告。","parameters":{"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}}},
     {"type":"function","function":{"name":"preview_data","description":"读取清洗数据或 Markdown 报告的前 100 行。前端只显示调用记录，不展示本次预览内容；需要在回复中摘述用户请求的内容。预览不会生成新报告。","parameters":{"type":"object","properties":{"job_id":{"type":"string"},"file":{"type":"string","enum":["users.dat","movies.dat","ratings.dat","actions.ndjson","report.md"]}},"required":["job_id","file"]}}},
-    {"type":"function","function":{"name":"request_report","description":"仅在用户明确要求基于历史任务重新生成报告时调用，支持已完成的清洗、对比或统一流程任务 ID。前端先显示准备报告的调用记录，本轮结束后显示可直接阅读的 Markdown 报告卡片，并在本轮下方提供下载。普通查看历史、规则统计或清洗记录无需报告。","parameters":{"type":"object","properties":{"job_ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":10}},"required":["job_ids"]}}}
-]) }
+    {"type":"function","function":{"name":"request_report","description":"仅在用户明确要求基于历史任务重新生成报告时调用，支持已完成的清洗、对比、统一流程或迭代二分析任务 ID。前端先显示准备报告的调用记录，本轮结束后显示可直接阅读的 Markdown 报告卡片，并在本轮下方提供下载。普通查看历史、规则统计或清洗记录无需报告。","parameters":{"type":"object","properties":{"job_ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":10}},"required":["job_ids"]}}}
+]); if let Some(items)=base.as_array_mut(){items.extend(crate::analysis::definitions());} base }
 fn emit(app: &AppHandle, conversation_id: &str, run_id: &str, kind: &str, value: Value) {
     let _ = app.emit("agent-event", json!({"conversation_id":conversation_id,"run_id":run_id,"kind":kind,"value":value}));
 }
@@ -60,6 +60,7 @@ fn rule_statistics(db: &Database, conversation_id: &str, job_id: Option<&str>) -
         "rules":rule_count_rows(result),"note":"这里统计触发移除的规则，规范化动作不计入。单条记录可能触发多条规则，规则触发次数不能直接相加为移除条数。"}))
 }
 fn concise_job(job: &Job) -> Value {
+    if job.kind.starts_with("analysis_"){return crate::analysis::summary(job);}
     let result = job.result.as_ref();
     json!({"job_id":job.id,"kind":job.kind,"status":job.status,"stage":job.stage,"error":job.error,
         "result":result.map(|v| match job.kind.as_str() {
@@ -74,7 +75,7 @@ fn concise_job(job: &Job) -> Value {
                 "rule_version":v["rule_version_label"]}),
             _ => v.clone() })})
 }
-async fn create_and_run<F>(app: &AppHandle, state: Arc<AppState>, conversation_id: &str,
+pub(crate) async fn create_and_run<F>(app: &AppHandle, state: Arc<AppState>, conversation_id: &str,
     run_id: &str, kind: &str, parent_id: Option<String>, status_label: &str, f: F) -> Result<Job, String>
 where F: FnOnce(Job, Arc<AppState>, AppHandle) -> Result<Value, String> + Send + 'static {
     let job = store::create_job(&state, conversation_id, kind, parent_id, Some(run_id.into()))?;
@@ -136,7 +137,9 @@ async fn execute_tool(app: &AppHandle, state: Arc<AppState>, conversation_id: &s
     run_id: &str, cancel: Arc<AtomicBool>, call: &ToolCall) -> Value {
     let result: Result<Value, String> = async {
         let args: Value = serde_json::from_str(if call.arguments.trim().is_empty() { "{}" } else { &call.arguments }).map_err(|e| e.to_string())?;
+        if !args.is_object(){return Err("工具参数必须是 JSON 对象".into());}
         let db = state.snapshot()?;
+        if crate::analysis::is_tool(&call.name){return crate::analysis::execute(app,state,conversation_id,run_id,cancel,&call.name,args).await;}
         match call.name.as_str() {
             "list_sources" => Ok(json!({"version":format!("原始数据 v{}",db.source_revision),"files":db.active_files.iter().filter_map(|(name,id)| db.files.iter().find(|f| &f.id == id).map(|f| json!({"name":name,"hdfs_path":f.hdfs_path}))).collect::<Vec<_>>() })),
             "list_rules" => Ok(json!({"catalog":rules::catalog(),"rules":active_rules(&state, conversation_id)?})),
@@ -236,7 +239,7 @@ async fn execute_tool(app: &AppHandle, state: Arc<AppState>, conversation_id: &s
                 for id in ids {
                     let id = id.as_str().ok_or("job_ids 须为任务 ID 列表")?;
                     let job = db.jobs.iter().find(|j| j.id == id && j.conversation_id == conversation_id &&
-                        j.status == "completed" && ["cleaning", "comparison", "pipeline"].contains(&j.kind.as_str()))
+                        j.status == "completed" && (["cleaning", "comparison", "pipeline"].contains(&j.kind.as_str()) || j.kind.starts_with("analysis_")))
                         .ok_or_else(|| format!("任务 {id} 不是已完成的清洗、对比或统一流程"))?;
                     accepted.push(job.id.clone());
                 }
@@ -363,6 +366,7 @@ async fn run_inner(app: &AppHandle, state: &Arc<AppState>, conversation_id: &str
         .rev().take(12).map(|j| format!("{}:{}:{}", j.id, j.kind, j.status)).collect::<Vec<_>>().join(", ");
     let mut messages = vec![json!({"role":"system","content":format!(
         "
+你具备迭代二六种分析工具。分类预测高分（评分至少4）；聚类训练期高分类型偏好；降维对照。用户未指定算法时用 compare_analysis 调用对应两种；不要用六次自主循环替代。缺少分析输入时先告知需要清洗和匹配的清洗后评估，不能编造数据、模型或结果。跨对话可先 list_analysis_assets 选择真实 dataset_id。分类同时传用户和电影 ID。仅训练期用于拟合；验证期调参，测试期最终评估；训练事件只看严格早于事件的历史，线上目标使用冻结训练期统计，不代表未来因果保证。未知 ID、历史不足或不适用指标必须说明。工具说明已写明前端展示内容；解释差异和限制，不逐项复述卡片。不得把模型概率当作已校准的真实偏好概率。读取历史不生成报告。
 你是 MovieLens 1M 数据治理 Agent。
 MovieLens 1M，简称 `ml-1m`，由明尼苏达大学 GroupLens Research 发布，是一个稳定的电影推荐基准数据集。该数据集包含 2000 年加入 MovieLens 的用户所产生的电影评分，并于 2003 年 2 月发布。
 
@@ -409,13 +413,13 @@ MovieLens 1M，简称 `ml-1m`，由明尼苏达大学 GroupLens Research 发布�
         for call in &calls {
             if cancel.load(Ordering::SeqCst) { return Err("已中断".into()); }
             emit(app, conversation_id, run_id, "tool", json!(call.name));
-            if ["list_sources", "list_rules", "list_jobs", "get_cleaning_records", "get_rule_statistics", "get_job", "preview_data", "request_report"].contains(&call.name.as_str()) {
+            if ["list_sources", "list_rules", "list_jobs", "get_cleaning_records", "get_rule_statistics", "get_job", "preview_data", "request_report", "list_analysis_assets", "get_analysis_rows"].contains(&call.name.as_str()) {
                 let _ = put_message(state, app, conversation_id, run_id, "tool",
                     match call.name.as_str() {
                         "list_sources" => "查看共享文件", "list_rules" => "查看规则目录",
                         "list_jobs" => "查看历史任务", "get_cleaning_records" => "查询清洗记录",
                         "get_rule_statistics" => "统计规则触发次数", "get_job" => "查看任务状态",
-                        "preview_data" => "预览结果数据", "request_report" => "准备历史任务报告", _ => "调用工具",
+                        "list_analysis_assets" => "查询分析数据与模型版本", "get_analysis_rows" => "查看分析结果记录", "preview_data" => "预览结果数据", "request_report" => "准备历史任务报告", _ => "调用工具",
                     }.into(), "tool_call", None, Some(call.name.clone()), None);
             }
             let result = execute_tool(app, state.clone(), conversation_id, run_id, cancel.clone(), call).await;

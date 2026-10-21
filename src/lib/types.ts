@@ -28,6 +28,10 @@ export type Settings = {
   ssh_target: string;
   remote_hadoop_bin: string;
   remote_python_bin: string;
+  analysis_mode: string;
+  analysis_python_bin: string;
+  analysis_ssh_target: string;
+  analysis_remote_python_bin: string;
   rules: Rules;
 };
 export type Message = {

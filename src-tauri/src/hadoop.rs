@@ -514,6 +514,7 @@ pub fn export(state: &AppState, job_id: &str, name: &str, destination: &str) -> 
 }
 
 fn public_artifact(kind: &str, name: &str) -> bool {
+    if kind.starts_with("analysis_"){return crate::analysis::public_file(name);}
     match kind {
         "cleaning" => ["users.dat", "movies.dat", "ratings.dat", "actions.ndjson"].contains(&name),
         "report" => name == "report.md",
@@ -572,4 +573,18 @@ mod artifact_tests {
         assert_eq!(result["time_boundaries"]["after"]["t2"], 1000000107_u64);
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+pub(crate) fn fetch_clean_file(state:&AppState,job:&Job,current:&Settings,name:&str,path:&Path,cancel:Arc<AtomicBool>)->Result<(),String>{
+    if !["users.dat","movies.dat","ratings.dat"].contains(&name){return Err("无效清洗文件".into());}
+    let result=job.result.as_ref().ok_or("清洗结果缺失")?;
+    let root=result["clean_hdfs"].as_str().ok_or("清洗路径缺失")?;
+    let mut settings=current.clone();
+    if let Some(connection)=result["hadoop_connection"].as_object(){
+        for (key,dest) in [("hadoop_mode",&mut settings.hadoop_mode),("ssh_target",&mut settings.ssh_target),("hadoop_bin",&mut settings.hadoop_bin),("remote_hadoop_bin",&mut settings.remote_hadoop_bin),("hadoop_conf_dir",&mut settings.hadoop_conf_dir)]{if let Some(v)=connection.get(key).and_then(Value::as_str){*dest=v.into();}}
+    }
+    let work=state.root.join("jobs").join(&job.id);fs::create_dir_all(&work).map_err(|e|e.to_string())?;
+    let temp=path.with_extension("fetching");
+    let outcome=Runner{settings:&settings,work:&work,cancel:&cancel,progress:None}.hadoop("fetch-analysis",vec!["fs".into(),"-cat".into(),format!("{root}/{name}")],Some(&temp));
+    match outcome{Ok(())=>fs::rename(temp,path).map_err(|e|e.to_string()),Err(e)=>{let _=fs::remove_file(temp);Err(e)}}
 }

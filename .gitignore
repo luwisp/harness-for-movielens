@@ -25,3 +25,6 @@ src-tauri/target
 *.sw?
 __pycache__/
 *.pyc
+
+# Bundled platform-specific analysis runtime
+src-tauri/resources/runtime/analysis-worker/

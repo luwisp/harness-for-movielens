@@ -1,4 +1,4 @@
-# MovieLens 数据治理 Agent · 迭代一
+# MovieLens 数据治理与分析 Agent · 迭代二
 
 基于Tauri 2 + React + Rust + Hadoop Streaming + DeepSeek function calling的MovieLens数据治理agent
 
@@ -59,3 +59,11 @@ agent拥有如下能力：数据清洗、五维评估、查看设置数据清洗
 ## 其他文档
 
 具体规则和结果见`docs/iteration1-design.md`
+
+## 迭代二分析
+
+新增逻辑回归、CART、KMeans、DBSCAN、截断 SVD、CUR，详见 [迭代二实现与使用](docs/iteration-two.md)。
+
+开发时在分析 Python 环境安装 `python -m pip install -r requirements-analysis.txt`，然后在设置中选择本机或 SSH 计算位置并检查环境。正式 Release 会附带本机分析运行环境。
+
+先完成清洗及匹配的清洗后五维评估，再用自然语言请求分类、聚类或降维对照。结果只使用真实登记数据，沿用评估的训练／验证时间边界；未指定算法时对照同类两种算法。

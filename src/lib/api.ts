@@ -8,6 +8,8 @@ import type {
   SourceStatus,
 } from "./types";
 export const api = {
+  analysisRows: (jobId: string, table: string, offset = 0, limit = 20) => invoke<import('../features/analysis/types').Page>('analysis_rows', {jobId,table,offset,limit}),
+  checkAnalysis: () => invoke<{ok:boolean}>('check_analysis_environment'),
   state: () => invoke<Database>("get_state"),
   catalog: () => invoke<RuleSpec[]>("rule_catalog"),
   sourceStatus: () => invoke<SourceStatus>("source_status"),

@@ -193,6 +193,11 @@ pub fn save_settings(state: tauri::State<'_, std::sync::Arc<AppState>>, settings
     if !settings.hdfs_root.starts_with('/') || settings.hdfs_root.contains("..") {
         return Err("HDFS 根路径须为绝对路径且不含 ..".into());
     }
+    if !["local","ssh"].contains(&settings.analysis_mode.as_str()){return Err("分析计算模式无效".into());}
+    if settings.analysis_mode=="ssh" {
+        let target=if settings.analysis_ssh_target.is_empty(){&settings.ssh_target}else{&settings.analysis_ssh_target};
+        if !valid_ssh_target(target){return Err("分析 SSH 目标无效".into());}
+    }
     rules::validate(&settings.rules)?;
     if settings.hadoop_mode == "ssh" && !valid_ssh_target(&settings.ssh_target) {
         return Err("SSH 目标须为 user@host 或 host".into());

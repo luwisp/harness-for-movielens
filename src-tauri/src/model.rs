@@ -17,8 +17,10 @@ pub struct Settings {
     pub hadoop_mode: String, pub hadoop_bin: String, pub hadoop_conf_dir: String,
     pub streaming_jar: String, pub python_bin: String, pub hdfs_root: String,
     pub ssh_target: String, pub remote_hadoop_bin: String, pub remote_python_bin: String,
+    pub analysis_mode: String, pub analysis_python_bin: String, pub analysis_ssh_target: String, pub analysis_remote_python_bin: String,
     pub rules: Rules,
 }
+
 impl Default for Settings {
     fn default() -> Self {
         Self { api_key: String::new(), api_base: "https://api.deepseek.com".into(), model: "deepseek-flash".into(),
@@ -26,7 +28,8 @@ impl Default for Settings {
             hadoop_conf_dir: String::new(), streaming_jar: String::new(),
             python_bin: if cfg!(windows) { "python" } else { "python3" }.into(),
             hdfs_root: "/ml1m-agent".into(), ssh_target: String::new(), remote_hadoop_bin: "hadoop".into(),
-            remote_python_bin: "python3".into(), rules: Rules::default() }
+            remote_python_bin: "python3".into(), analysis_mode: "local".into(), analysis_python_bin: String::new(),
+            analysis_ssh_target: String::new(), analysis_remote_python_bin: "python3".into(), rules: Rules::default() }
     }
 }
 

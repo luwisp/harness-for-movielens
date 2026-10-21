@@ -50,6 +50,8 @@ pub fn humanize_legacy_report(body: &str) -> String {
     output
 }
 fn section(job: &Job, all_jobs: &[Job]) -> String {
+    if job.kind.starts_with("analysis_"){return crate::analysis::report_section(job);}
+
     let result = match &job.result { Some(v) => v, None => return String::new() };
     let ordinal = if job.display_number == 0 { "历史任务".to_string() } else { format!("第 {} 次", job.display_number) };
     let mut out = format!("\n## {} · {}\n\n", match job.kind.as_str() {
@@ -138,7 +140,7 @@ fn selected_jobs<'a>(db: &'a Database, conversation_id: &str, run_id: &str) -> R
     }
     let jobs: Vec<_> = db.jobs.iter().filter(|j| j.conversation_id == conversation_id &&
         selected.contains(&j.id) && j.status == "completed" &&
-        (j.kind == "cleaning" || (j.kind == "comparison" &&
+        (j.kind.starts_with("analysis_") && (j.result.as_ref().is_some_and(|v|v["reportable"]==true)||conversation.messages.iter().any(|m|m.run_id.as_deref()==Some(run_id)&&m.kind=="report_request"&&m.job_id.as_deref()==Some(j.id.as_str()))) || j.kind == "cleaning" || (j.kind == "comparison" &&
             j.result.as_ref().is_some_and(|v| v["score_spec_version"] == "quality-spec-v2")))).collect();
     Ok(jobs)
 }
@@ -148,9 +150,9 @@ pub fn generate(state: &AppState, conversation_id: &str, run_id: &str) -> Result
     let jobs = selected_jobs(&db, conversation_id, run_id)?;
     if jobs.is_empty() { return Ok(None); }
     let report = crate::store::create_job(state, conversation_id, "report", None, Some(run_id.into()))?;
-    let mut body = format!("# MovieLens 数据治理报告\n\n生成时间：{}。\n\n本报告自动汇总本轮工具调用涉及的已完成任务结果。\n", crate::model::now());
+    let mut body = format!("# MovieLens 数据分析报告\n\n生成时间：{}。\n\n本报告自动汇总本轮工具调用涉及的已完成任务结果。\n", crate::model::now());
     for job in &jobs { body.push_str(&section(job, &db.jobs)); }
-    body.push_str("\n---\n\n评分使用任务记录的规则方案；清洗数据文件和本报告可在本轮消息下方下载。\n");
+    body.push_str("\n---\n\n结果使用任务记录的数据、规则与模型版本；可下载结果和本报告位于本轮消息下方。\n");
     let dir = state.root.join("jobs").join(&report.id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("report.md"), &body).map_err(|e| e.to_string())?;
@@ -216,4 +218,16 @@ mod tests {
         let old = humanize_legacy_report("| 规则 ID | 触发次数 |\n| `schema_fields` | 2 |");
         assert!(old.contains("字段数量：users/movies/ratings 必须分别有 5/3/4 个字段"));
     }
+    #[test]
+    fn analysis_reports_new_results_but_not_history_reads() {
+        let mut db=Database::default();
+        db.conversations.push(Conversation{id:"c".into(),..Conversation::default()});
+        for (id,reportable) in [("new",true),("history",false)]{
+            db.jobs.push(Job{id:id.into(),conversation_id:"c".into(),kind:"analysis_svd".into(),status:"completed".into(),run_id:Some("r".into()),result:Some(serde_json::json!({"reportable":reportable})),..Job::default()});
+        }
+        assert_eq!(selected_jobs(&db,"c","r").unwrap().iter().map(|j|j.id.as_str()).collect::<Vec<_>>(),vec!["new"]);
+        db.conversations[0].messages.push(Message{run_id:Some("r".into()),kind:"report_request".into(),job_id:Some("history".into()),..Message::default()});
+        assert_eq!(selected_jobs(&db,"c","r").unwrap().len(),2);
+    }
+
 }

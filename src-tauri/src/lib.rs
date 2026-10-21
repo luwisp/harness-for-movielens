@@ -1,4 +1,5 @@
 mod agent;
+mod analysis;
 mod hadoop;
 mod model;
 mod report;
@@ -91,6 +92,14 @@ fn cleaning_records(state: State<'_, Arc<AppState>>, job_id: String, rule_id: Op
     hadoop::cleaning_records(&state, job, rule_id.as_deref(), table.as_deref(), action.as_deref(), offset, limit)
 }
 
+#[tauri::command]
+fn analysis_rows(state: State<'_, Arc<AppState>>, job_id: String, table: String, offset: usize, limit: usize) -> Result<serde_json::Value,String> {
+    analysis::rows(&state,&job_id,&table,offset,limit,None)
+}
+#[tauri::command]
+async fn check_analysis_environment(app:AppHandle,state:State<'_,Arc<AppState>>) -> Result<serde_json::Value,String>{
+    let state=state.inner().clone();tauri::async_runtime::spawn_blocking(move||analysis::check(&state,&app)).await.map_err(|e|e.to_string())?
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -102,7 +111,7 @@ pub fn run() {
             get_state, store::create_conversation, store::rename_conversation, store::delete_conversation,
             store::save_settings, store::update_rules, rule_catalog, source_status, cleaning_records, read_report, store::begin_upload, store::append_upload_chunk,
             store::finish_upload, store::abort_upload, start_chat, stop_chat,
-            preview_result, download_result
+            preview_result, download_result, analysis_rows, check_analysis_environment
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Tauri application");

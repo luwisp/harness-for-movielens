@@ -21,6 +21,7 @@ export function SettingsView({
   onNotice: (s: string) => void;
 }) {
   const [status, setStatus] = useState<SourceStatus | null>(null);
+  const [checking,setChecking] = useState(false);
   const [uploading, setUploading] = useState("");
   const refresh = () =>
     api
@@ -147,6 +148,12 @@ export function SettingsView({
             {field("远端 Streaming jar 路径", "streaming_jar")}
           </>
         )}
+      </section>
+      <section>
+        <h2>分析运行环境</h2>
+        <label>计算位置<select value={settings.analysis_mode} disabled={busy} onChange={e=>setSettings({...settings,analysis_mode:e.target.value})}><option value="local">本机</option><option value="ssh">远端 SSH 主机</option></select></label>
+        {settings.analysis_mode==='ssh'?<>{field('分析 SSH 目标（留空沿用 Hadoop 主机）','analysis_ssh_target')}{field('远端分析 Python 命令','analysis_remote_python_bin')}</>:field('分析 Python 路径（留空优先使用随应用附带的运行环境）','analysis_python_bin')}
+        <button disabled={busy || configDirty || checking} onClick={async()=>{setChecking(true);try{await api.checkAnalysis();onNotice('分析环境检查通过');}catch(e){onNotice(String(e));}finally{setChecking(false);}}}>{checking?'检查中…':configDirty?'先保存设置':'检查分析环境'}</button>
       </section>
       <section>
         <h2>默认清洗与评分规则</h2>
